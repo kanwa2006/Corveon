@@ -21,15 +21,18 @@ jobs:
       run:
         working-directory: backend
     services:
+      # Bootstraps as the default "postgres" superuser; the next step creates
+      # "corveon" as a separate, non-superuser, database-owning role — Row-
+      # Level Security is a no-op against a superuser connection regardless
+      # of FORCE, and Postgres refuses to demote the bootstrap role itself
+      # (ADR-0013).
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: corveon
-          POSTGRES_PASSWORD: corveon
-          POSTGRES_DB: corveon_test
+          POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U corveon"
+          --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
@@ -48,6 +51,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - name: Create non-superuser app role (ADR-0013)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d postgres -c "CREATE ROLE corveon WITH LOGIN PASSWORD 'corveon';"
+          psql -h localhost -U postgres -d postgres -c "CREATE DATABASE corveon_test OWNER corveon;"
       - name: Install
         run: pip install -e ".[dev]"
       - name: Lint (ruff)

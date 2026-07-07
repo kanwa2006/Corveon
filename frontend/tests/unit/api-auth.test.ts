@@ -59,7 +59,10 @@ describe('lib/api/auth', () => {
 
   it('registerUser falls back to the generic message when no field error is present', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
-      jsonResponse({ error_code: 'conflict', message: 'An account with this email already exists.' }, 409),
+      jsonResponse(
+        { error_code: 'conflict', message: 'An account with this email already exists.' },
+        409,
+      ),
     );
 
     await expect(registerUser('a@b.com', 'correcthorsebattery')).rejects.toThrow(

@@ -29,7 +29,7 @@ schema and kept honest by contract tests (schemathesis).
 | GET | `/chats?search=&pinned=&archived=` | `200 [chat]` |
 | GET | `/chats/{id}` | `200 {chat}` |
 | PATCH | `/chats/{id}` | `200` (rename / pin / archive) |
-| DELETE | `/chats/{id}` | `204` (hard-delete cascade via ARQ job, §23.6) |
+| DELETE | `/chats/{id}` | `204` — hard-deletes the chat row directly today; becomes an ARQ-cascade job (§23.6) once messages/documents/embeddings exist to cascade to |
 
 ## Messages / AI (SSE streaming)
 | Method | Path | Result |

@@ -28,7 +28,7 @@
   --evidence-conflicting: 0 72% 51%; /* red    — conflicting/insufficient */
 
   --radius: 0.625rem;
-  --font-sans: 'Inter', system-ui, sans-serif;
+  /* --font-sans / --font-display are injected by next/font in app/layout.tsx */
 }
 
 :root[data-theme='dark'] {

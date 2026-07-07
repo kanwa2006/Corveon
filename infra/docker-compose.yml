@@ -6,16 +6,21 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    # Bootstraps as the default "postgres" superuser (POSTGRES_USER/DB left
+    # unset). The init script creates "corveon" as a separate, non-superuser,
+    # database-owning role — required for Row-Level Security to actually
+    # apply to the app's own queries (ADR-0013). Do not set POSTGRES_USER
+    # back to "corveon" — Postgres protects the bootstrap role from being
+    # demoted, which is exactly the problem this setup avoids.
     environment:
-      POSTGRES_USER: corveon
-      POSTGRES_PASSWORD: corveon
-      POSTGRES_DB: corveon
+      POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U corveon"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 10

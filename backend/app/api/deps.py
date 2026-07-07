@@ -17,6 +17,7 @@ from app.core.security import InvalidTokenError, TokenType, decode_token
 from app.core.token_denylist import is_revoked
 from app.data.models.user import User, UserRole
 from app.data.repositories.user_repository import UserRepository
+from app.data.rls import set_rls_user
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -66,6 +67,18 @@ async def get_current_user(
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+async def get_rls_scoped_db(db: DbDep, user: CurrentUserDep) -> AsyncSession:
+    """A DB session with the Postgres RLS GUC set for the current user
+    (docs/ARCHITECTURE.md §5, ADR-0013) — defense in depth alongside the app
+    guard and the repository invariant. Use for any endpoint touching a
+    per-user-isolated table (chats and beyond)."""
+    await set_rls_user(db, user.id)
+    return db
+
+
+RlsDbDep = Annotated[AsyncSession, Depends(get_rls_scoped_db)]
 
 
 def require_role(*allowed_roles: UserRole) -> Callable[[User], User]:
