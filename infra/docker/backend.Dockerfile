@@ -5,7 +5,7 @@
 # Build context is the repository root: docker build -f infra/docker/backend.Dockerfile .
 
 # ── Builder ───────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 ENV PIP_NO_CACHE_DIR=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /build
 # System deps for OCR / PDF handling.
@@ -19,7 +19,7 @@ RUN python -m venv /venv \
     && /venv/bin/pip install .
 
 # ── Runtime ───────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 ENV PATH="/venv/bin:$PATH" PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
       tesseract-ocr ghostscript \
