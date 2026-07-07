@@ -1,0 +1,66 @@
+name: 🐛 Bug report
+description: Report a defect in Corveon
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For **security** issues, do not use this form — follow
+        [SECURITY.md](https://github.com/kanwa2006/Corveon/blob/main/docs/SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, deterministic steps. Include a `trace_id` from the logs if you have one.
+      placeholder: |
+        1. ...
+        2. ...
+        3. see error
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - API / backend
+        - Orchestrator / agents
+        - Provider layer
+        - Evidence verification
+        - Medication safety
+        - Ingestion / upload pipeline
+        - Data layer / migrations
+        - Frontend
+        - Infra / CI / docs
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python/Node versions, deployment (local / Fly / Render / Vercel), relevant config.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / trace
+      description: Relevant structured log lines or span data. **Redact secrets and any patient/PHI data.**
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: This report contains no real patient data / PHI and no secrets.
+          required: true

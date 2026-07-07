@@ -1,0 +1,53 @@
+name: ✨ Feature request
+description: Propose a capability or improvement
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Corveon is safety-first and evidence-grounded. Proposals are weighed against the
+        [architecture](https://github.com/kanwa2006/Corveon/blob/main/docs/ARCHITECTURE.md) and
+        [roadmap](https://github.com/kanwa2006/Corveon/blob/main/docs/ROADMAP.md). If a proposal
+        changes an approved decision, it should reference (and likely add) an
+        [ADR](https://github.com/kanwa2006/Corveon/tree/main/docs/adr).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What user or engineering problem does this solve? Who benefits?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Corveon do? How does it fit the existing architecture?
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Roadmap phase this fits
+      options:
+        - Week 1 (MVP core)
+        - Month 1 (provider layer & orchestration)
+        - Month 3 (evidence engine)
+        - Month 6–12 (medication engine & enterprise)
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Consistency check
+      options:
+        - label: This does not require always-on RAG, cross-chat reads, or a hardcoded provider.
+          required: false
+        - label: If it touches medication logic, the rules engine remains the source of truth.
+          required: false

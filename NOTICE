@@ -1,0 +1,13 @@
+Corveon
+Copyright 2026 Corveon contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Corveon integrates with, and relies on, third-party public medical data sources and
+open-source software, each under its own license and terms of use — including openFDA,
+DailyMed, RxNorm/RxNav (NLM), PubMed/PMC E-utilities (NCBI), ClinicalTrials.gov, MeSH,
+DDInter 2.0, the AGS Beers Criteria, and STOPP/START. Users are responsible for complying
+with each source's license and rate limits.
+
+Corveon is not a medical device and does not provide medical advice. It is a human-in-the-loop
+assistant for licensed professionals and never replaces clinical judgment.

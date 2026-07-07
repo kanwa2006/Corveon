@@ -1,0 +1,111 @@
+# Corveon backend — packaging, dependencies, and tooling standards.
+# Versions are pinned to lines resolved in the blueprint (§4). Application code
+# is added incrementally per docs/ROADMAP.md.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "corveon-backend"
+version = "0.0.0"
+description = "Corveon — provider-agnostic, evidence-grounded clinical intelligence platform (backend)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Corveon contributors" }]
+
+dependencies = [
+  # ── Web / API ─────────────────────────────────────────────
+  "fastapi>=0.139,<0.140",
+  "uvicorn[standard]>=0.34,<0.40",
+  "gunicorn>=23",
+  "pydantic>=2.9,<3",
+  "pydantic-settings>=2.5,<3",
+  "python-multipart>=0.0.12",
+  "sse-starlette>=2.1",              # SSE served by backend, not Vercel (§23.3)
+  # ── Data / persistence ────────────────────────────────────
+  "sqlalchemy[asyncio]>=2.0,<2.1",
+  "asyncpg>=0.30",
+  "alembic>=1.13,<2",
+  "pgvector>=0.3",                  # Python bindings for pgvector types
+  "redis>=5.0",
+  "arq>=0.26",
+  # ── Auth / security ───────────────────────────────────────
+  "argon2-cffi>=23",
+  "pyjwt>=2.9",
+  # ── Storage ───────────────────────────────────────────────
+  "boto3>=1.35",                    # S3-compatible client for Cloudflare R2
+  # ── Ingestion / embeddings / OCR ──────────────────────────
+  "sentence-transformers>=3.0",     # bge-small-en / e5-small, 384-dim, local CPU
+  "pymupdf>=1.24",
+  "python-docx>=1.1",
+  "python-pptx>=1.0",
+  "markdown-it-py>=3.0",
+  "pillow>=10.4",
+  "pytesseract>=0.3.13",
+  "ocrmypdf>=16",
+  # ── External medical APIs / HTTP ──────────────────────────
+  "httpx>=0.27",
+  "tenacity>=9.0",                  # retry/backoff with jitter (§5)
+  # ── Observability ─────────────────────────────────────────
+  "structlog>=24.4",
+  "opentelemetry-sdk>=1.27",
+  "opentelemetry-instrumentation-fastapi>=0.48b0",
+  "opentelemetry-exporter-otlp>=1.27",
+  "prometheus-client>=0.21",
+  "sentry-sdk>=2.14",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=5.0",
+  "httpx>=0.27",
+  "testcontainers[postgres,redis]>=4.8",
+  "schemathesis>=3.36",
+  "locust>=2.31",
+  "bandit>=1.7",
+  "pip-audit>=2.7",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "ASYNC", "S", "RUF"]
+# S101 (assert) is fine in tests; relaxed there below.
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+disallow_untyped_defs = true
+namespace_packages = true
+mypy_path = "."
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --cov=app --cov-report=term-missing"
+markers = [
+  "unit: fast, isolated logic (rules engine, routing policy)",
+  "integration: requires Testcontainers (Postgres, Redis)",
+  "api: API contract tests (schemathesis / httpx)",
+  "database: migration up/down + RLS isolation invariants",
+  "security: injection, upload-abuse, auth/RBAC",
+  "golden: deterministic medication-rule golden tests against pinned snapshots",
+]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

@@ -1,0 +1,48 @@
+# Corveon — local development services.
+# Brings up Postgres (with pgvector), Redis, and Ollama. The API and ARQ worker
+# are typically run from the host during development (uvicorn / arq); a containerized
+# api/worker profile can be added once app entrypoints exist (see backend.Dockerfile).
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: corveon
+      POSTGRES_PASSWORD: corveon
+      POSTGRES_DB: corveon
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U corveon"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    # Optional local, zero-cost LLM provider (the implicit default). Pull a model with:
+    #   docker compose exec ollama ollama pull llama3.1
+
+volumes:
+  pgdata:
+  redisdata:
+  ollama-data:
