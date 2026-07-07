@@ -8,7 +8,11 @@ from pydantic import ValidationError
 
 
 @pytest.mark.unit
-def test_settings_loads_required_fields() -> None:
+def test_settings_loads_required_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Isolate from the ambient environment — CI sets CORVEON_ENV=test at the
+    # job level, which pydantic-settings would otherwise pick up over the
+    # class default, making this assertion environment-dependent.
+    monkeypatch.delenv("CORVEON_ENV", raising=False)
     settings = Settings(
         JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
         DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
@@ -27,7 +31,11 @@ def test_settings_rejects_placeholder_jwt_secret() -> None:
 
 
 @pytest.mark.unit
-def test_settings_requires_database_url() -> None:
+def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Isolate from the ambient environment — CI sets DATABASE_URL at the job
+    # level for the migrations/pytest steps, which would otherwise satisfy
+    # this "required" field even though none was passed explicitly here.
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(ValidationError):
         Settings(JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value")  # type: ignore[call-arg]
 
