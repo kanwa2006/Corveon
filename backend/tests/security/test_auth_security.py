@@ -5,11 +5,10 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import AsyncClient
-
 from app.api.deps import require_role
 from app.core.errors import ForbiddenError
 from app.data.models.user import User, UserRole
+from httpx import AsyncClient
 
 pytestmark = pytest.mark.security
 

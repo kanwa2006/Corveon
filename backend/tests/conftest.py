@@ -11,11 +11,10 @@ import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
-
 from app.core.config import get_settings
 from app.main import create_app
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
@@ -24,9 +23,7 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 def _test_settings_env() -> None:
     os.environ.setdefault("CORVEON_ENV", "test")
     os.environ.setdefault("LOG_FORMAT", "console")
-    os.environ.setdefault(
-        "JWT_SECRET_KEY", "test-only-secret-not-for-production-use-32-bytes-min"
-    )
+    os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-not-for-production-use-32-bytes-min")
     get_settings.cache_clear()
 
 
@@ -54,8 +51,6 @@ async def client(app) -> AsyncIterator[AsyncClient]:  # type: ignore[no-untyped-
 async def _clean_tables(app) -> AsyncIterator[None]:  # type: ignore[no-untyped-def]
     yield
     async for session in app.state.db.session():
-        await session.execute(
-            text("TRUNCATE TABLE users, organizations RESTART IDENTITY CASCADE")
-        )
+        await session.execute(text("TRUNCATE TABLE users, organizations RESTART IDENTITY CASCADE"))
         await session.commit()
         break

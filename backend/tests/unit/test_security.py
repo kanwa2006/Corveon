@@ -6,7 +6,6 @@ import time
 
 import jwt
 import pytest
-
 from app.core.config import Settings
 from app.core.security import (
     InvalidTokenError,

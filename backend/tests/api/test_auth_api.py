@@ -8,7 +8,9 @@ from httpx import AsyncClient
 pytestmark = pytest.mark.api
 
 
-async def _register(client: AsyncClient, email: str = "alice@example.com", password: str = "correcthorsebattery"):
+async def _register(
+    client: AsyncClient, email: str = "alice@example.com", password: str = "correcthorsebattery"
+):
     return await client.post("/api/v1/auth/register", json={"email": email, "password": password})
 
 

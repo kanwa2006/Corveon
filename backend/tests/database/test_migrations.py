@@ -7,10 +7,9 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from app.core.config import get_settings
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
-
-from app.core.config import get_settings
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 
