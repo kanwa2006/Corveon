@@ -1,0 +1,139 @@
+"""Typed application configuration (12-factor, pydantic-settings).
+
+Transcribes the environment contract documented in docs/ENVIRONMENT.md into a
+single typed ``Settings`` object. Every field here corresponds to a variable in
+.env.example; this module is the only place that reads ``os.environ`` directly.
+
+All AI provider fields are optional — an absent provider is a normal, valid
+state (ADR-0006, CLAUDE.md §12): this module never raises or warns because a
+provider key is unset. Only genuinely required infrastructure (``JWT_SECRET_KEY``,
+``DATABASE_URL``) is mandatory.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=True,
+    )
+
+    # ── Core / runtime ───────────────────────────────────────
+    CORVEON_ENV: Literal["development", "test", "staging", "production"] = "development"
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    LOG_FORMAT: Literal["json", "console"] = "json"
+    API_HOST: str = "0.0.0.0"  # noqa: S104  # nosec B104 -- intentional container-friendly bind-all
+    API_PORT: int = 8000
+    FRONTEND_ORIGIN: str = "http://localhost:3000"
+
+    # ── Security / auth ──────────────────────────────────────
+    JWT_SECRET_KEY: str = Field(min_length=32)
+    JWT_ACCESS_TTL_SECONDS: int = 900
+    JWT_REFRESH_TTL_SECONDS: int = 1_209_600
+    ARGON2_TIME_COST: int = 3
+    ARGON2_MEMORY_COST: int = 65536
+    ARGON2_PARALLELISM: int = 4
+
+    # ── Database (Postgres 16 + pgvector) ────────────────────
+    DATABASE_URL: str
+    DATABASE_POOL_SIZE: int = 10
+    DATABASE_MAX_OVERFLOW: int = 5
+    DB_ENABLE_RLS: bool = True
+
+    # ── Redis (cache + ARQ) ───────────────────────────────────
+    REDIS_URL: str = "redis://localhost:6379/0"
+    EXTERNAL_CACHE_DEFAULT_TTL_SECONDS: int = 86400
+
+    # ── Object storage (Cloudflare R2) ───────────────────────
+    R2_ACCOUNT_ID: str | None = None
+    R2_ACCESS_KEY_ID: str | None = None
+    R2_SECRET_ACCESS_KEY: str | None = None
+    R2_BUCKET: str = "corveon-documents"
+    R2_ENDPOINT: str | None = None
+    R2_SIGNED_URL_TTL_SECONDS: int = 300
+
+    # ── Embeddings ────────────────────────────────────────────
+    EMBEDDING_MODEL_ID: str = "BAAI/bge-small-en-v1.5"
+    EMBEDDING_DEVICE: str = "cpu"
+
+    # ── AI providers — all optional (§23.1, ADR-0006) ────────
+    GEMINI_API_KEYS: str | None = None
+    GEMINI_DEFAULT_MODEL: str = "gemini-2.5-flash-lite"
+    ANTHROPIC_API_KEYS: str | None = None
+    ANTHROPIC_DEFAULT_MODEL: str = "claude-sonnet-5"
+    OPENAI_API_KEYS: str | None = None
+    OPENAI_DEFAULT_MODEL: str = "gpt-4.1-mini"
+    OPENROUTER_API_KEYS: str | None = None
+    OPENROUTER_DEFAULT_MODEL: str | None = None
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_DEFAULT_MODEL: str = "llama3.1"
+    PROVIDER_PRIORITY: str = "gemini,openrouter,ollama"
+    SENSITIVE_TEXT_PROVIDER: str = "ollama"
+    LLM_CALLS_PER_REQUEST_BUDGET: int = 8
+
+    # ── External medical APIs ────────────────────────────────
+    OPENFDA_API_KEY: str | None = None
+    NCBI_EUTILS_API_KEY: str | None = None
+    NCBI_EUTILS_EMAIL: str | None = None
+    RXNAV_BASE_URL: str = "https://rxnav.nlm.nih.gov/REST"
+    RXNAV_MAX_RPS: int = 20
+
+    # ── Observability ─────────────────────────────────────────
+    OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
+    OTEL_SERVICE_NAME: str = "corveon-api"
+    PROMETHEUS_METRICS_ENABLED: bool = True
+    SENTRY_DSN: str | None = None
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def _reject_placeholder_secret(cls, value: str) -> str:
+        if value.strip().lower().startswith("change-me"):
+            raise ValueError(
+                "JWT_SECRET_KEY is still the .env.example placeholder — "
+                "generate a real value with `openssl rand -hex 32`."
+            )
+        return value
+
+    def _csv(self, raw: str | None) -> list[str]:
+        if not raw:
+            return []
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def gemini_api_key_pool(self) -> list[str]:
+        return self._csv(self.GEMINI_API_KEYS)
+
+    @property
+    def anthropic_api_key_pool(self) -> list[str]:
+        return self._csv(self.ANTHROPIC_API_KEYS)
+
+    @property
+    def openai_api_key_pool(self) -> list[str]:
+        return self._csv(self.OPENAI_API_KEYS)
+
+    @property
+    def openrouter_api_key_pool(self) -> list[str]:
+        return self._csv(self.OPENROUTER_API_KEYS)
+
+    @property
+    def provider_priority_list(self) -> list[str]:
+        return self._csv(self.PROVIDER_PRIORITY)
+
+    @property
+    def is_production(self) -> bool:
+        return self.CORVEON_ENV == "production"
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Process-wide cached settings instance (FastAPI dependency-friendly)."""
+    return Settings()  # values sourced from env/.env

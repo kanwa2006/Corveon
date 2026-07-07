@@ -1,7 +1,8 @@
 # Corveon — Local Setup
 
-Get a development environment running. The repo currently ships the **engineering foundation**;
-application entrypoints (`app/main.py`, migrations, Next routes) are added per [ROADMAP.md](ROADMAP.md).
+Get a development environment running. Application code lands incrementally per
+[ROADMAP.md](ROADMAP.md) — the Auth + Users slice (Week 1) is in place; chat/document/evidence/
+medication routes follow.
 
 ## Prerequisites
 | Tool | Version | Notes |
@@ -32,9 +33,9 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-ruff check . && mypy app && pytest   # quality gates (green on empty scaffold)
-# alembic upgrade head               # once migrations exist
-# uvicorn app.main:app --reload      # once app/main.py exists → http://localhost:8000
+alembic upgrade head                 # applies the baseline organizations/users schema
+ruff check . && mypy app && pytest   # quality gates
+uvicorn app.main:app --reload        # http://localhost:8000 (docs at /docs, health at /health)
 ```
 
 ## 4. Frontend
@@ -55,7 +56,7 @@ ollama pull llama3.1                 # or any model set in OLLAMA_DEFAULT_MODEL
 - Line endings are normalized by `.editorconfig` / `.gitattributes` to LF.
 
 ## Verifying the environment
-- `GET http://localhost:8000/health` → liveness (once the API exists).
+- `GET http://localhost:8000/health` → liveness. `GET http://localhost:8000/ready` → DB + Redis checks.
 - `docker compose ... logs -f postgres` → confirm pgvector extension is available.
 - If a provider is unset, that is fine — the platform runs in local/degraded mode by design.
 

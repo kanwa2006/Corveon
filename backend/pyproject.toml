@@ -28,6 +28,7 @@ dependencies = [
   "gunicorn>=23",
   "pydantic>=2.9,<3",
   "pydantic-settings>=2.5,<3",
+  "email-validator>=2.2",            # backs pydantic's EmailStr
   "python-multipart>=0.0.12",
   "sse-starlette>=2.1",              # SSE served by backend, not Vercel (§23.3)
   # ── Data / persistence ────────────────────────────────────
