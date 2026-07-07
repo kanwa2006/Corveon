@@ -5,6 +5,7 @@ local UI state via Zustand, streaming via a dedicated SSE hook. UI: shadcn/ui + 
 charts via Recharts; motion via Framer Motion.
 
 ## Local dev
+
 ```bash
 pnpm install          # Node 20+ (24 LTS recommended)
 pnpm dev              # http://localhost:3000
@@ -12,6 +13,7 @@ pnpm lint && pnpm typecheck && pnpm test
 ```
 
 ## Layout
+
 ```
 app/          Next.js routes — (auth), (app)/chats/[chatId], (app)/dashboard,
               (app)/settings, (app)/org/trusted-sources
@@ -21,6 +23,7 @@ tests/        Vitest (unit/component) + Playwright (e2e, a11y)
 ```
 
 ## Conventions
+
 - WCAG 2.2 AA: semantic HTML, focus management, keyboard nav, ARIA, contrast-compliant tokens,
   reduced-motion support; verified with axe-core.
 - Five evidence source-classes and severity levels have **distinct, tokenized colors** (§14).

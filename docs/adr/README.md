@@ -17,5 +17,6 @@ once `Accepted`; to change a decision, add a new ADR that supersedes the old one
 | [0009](0009-name-corveon.md) | Project name "Corveon" | Accepted |
 | [0010](0010-apache-2-0-license.md) | Apache-2.0 license | Accepted |
 | [0011](0011-arq-over-celery.md) | ARQ over Celery for the async task queue | Accepted |
+| [0012](0012-frontend-auth-cookie-bff-proxy.md) | httpOnly-cookie session via Next.js Route Handler BFF proxy | Accepted |
 
 New ADRs use [`_template.md`](_template.md) and the next sequential number.

@@ -8,7 +8,33 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
 
 ## [Unreleased]
 
-_Nothing yet — implementation begins at Roadmap Week 1 (auth + chat CRUD with per-chat isolation)._
+### Added
+- **Auth + Users** (Roadmap Week 1, first slice): registration, login, refresh, logout, and profile
+  lookup, with Argon2id password hashing, JWT access/refresh tokens, and Redis-backed refresh-token
+  revocation.
+- Data layer: async SQLAlchemy 2.0 engine/session, `organizations` + `users` models and repository,
+  and the baseline Alembic migration (`0001_baseline_organizations_and_users`) — verified against a
+  live Postgres with a clean autogenerate empty-diff and a full downgrade/upgrade round trip
+  (ADR-0002).
+- Core cross-cutting infrastructure: typed `Settings` (pydantic-settings, matching
+  `docs/ENVIRONMENT.md`), structlog JSON/console logging wired through stdlib with `trace_id`
+  propagation, OpenTelemetry FastAPI instrumentation, Prometheus `/metrics`, and a uniform
+  `{error_code, message, details, trace_id}` error model.
+- `GET /api/v1/auth/me` — a small, additive endpoint (not in the original catalog) so the frontend
+  can fetch the authenticated user's profile; `/login` only returns tokens. Documented in
+  [docs/API.md](docs/API.md).
+- Frontend app shell: Next.js 16 App Router layout, light/dark theme (flash-free, per Next's
+  documented pattern), TanStack Query provider, Tailwind design tokens (incl. the five evidence
+  source-class colors, ready for the Evidence feature).
+- Frontend auth: login/register pages, a secure httpOnly-cookie session via Next.js Route Handlers
+  proxying the backend (`ADR-0012`), presence-based route guarding (`proxy.ts`, Next 16's renamed
+  `middleware.ts`), and a minimal authenticated dashboard landing page.
+- Tests: backend unit/api/database/security suites (pytest); frontend unit tests (Vitest, 12
+  passing) and Playwright e2e/a11y specs for the auth flow (not yet wired into CI — full-stack
+  orchestration is tracked as a follow-up).
+- [ADR-0012](docs/adr/0012-frontend-auth-cookie-bff-proxy.md): httpOnly-cookie BFF proxy for
+  frontend auth; explicitly defers the SSE-authorization bridge to the Chat feature (interacts
+  with ADR-0007).
 
 ## [0.0.0] — 2026-07-07
 

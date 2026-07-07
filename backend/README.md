@@ -7,8 +7,9 @@ contract and [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the design
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Python 3.12
 pip install -e ".[dev]"
+alembic upgrade head                                # applies migrations
 ruff check . && mypy app && pytest                  # quality gates
-# uvicorn app.main:app --reload                       # once app/main.py exists
+uvicorn app.main:app --reload                       # http://localhost:8000
 ```
 
 ## Layout (single-responsibility packages — see CLAUDE.md §4)

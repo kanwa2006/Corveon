@@ -20,6 +20,7 @@ schema and kept honest by contract tests (schemathesis).
 | POST | `/auth/login` | `200 {access, refresh}` |
 | POST | `/auth/refresh` | `200 {access}` |
 | POST | `/auth/logout` | `204` |
+| GET | `/auth/me` | `200 {user}` — added during Week 1 implementation: the frontend needs a way to fetch the authenticated user's profile, which `/login` (tokens only) doesn't provide. Requires a valid bearer access token. |
 
 ## Chats
 | Method | Path | Result |

@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens (docs/ARCHITECTURE.md §7, frontend/README.md). HSL triplets
+   (no hsl() wrapper) so Tailwind can compose them with opacity modifiers. */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 217 91% 60%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 210 40% 98%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 210 40% 98%;
+
+  /* Evidence source-class palette — distinct hues, WCAG-checked against both
+     light/dark backgrounds below. */
+  --evidence-uploaded: 217 91% 60%; /* blue   — uploaded document */
+  --evidence-verified: 152 60% 36%; /* green  — verified public evidence */
+  --evidence-org-trusted: 262 52% 55%; /* violet — org-trusted evidence */
+  --evidence-ai-reasoning: 35 92% 51%; /* amber  — AI reasoning */
+  --evidence-conflicting: 0 72% 51%; /* red    — conflicting/insufficient */
+
+  --radius: 0.625rem;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+:root[data-theme='dark'] {
+  --background: 222 47% 8%;
+  --foreground: 210 40% 98%;
+  --card: 222 44% 11%;
+  --card-foreground: 210 40% 98%;
+  --border: 217 33% 20%;
+  --input: 217 33% 20%;
+  --ring: 217 91% 65%;
+  --muted: 217 33% 17%;
+  --muted-foreground: 215 20% 65%;
+  --primary: 217 91% 65%;
+  --primary-foreground: 222 47% 11%;
+  --destructive: 0 63% 55%;
+  --destructive-foreground: 210 40% 98%;
+
+  --evidence-uploaded: 217 91% 68%;
+  --evidence-verified: 152 55% 48%;
+  --evidence-org-trusted: 262 60% 68%;
+  --evidence-ai-reasoning: 35 92% 60%;
+  --evidence-conflicting: 0 70% 62%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    --card: 222 44% 11%;
+    --card-foreground: 210 40% 98%;
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 217 91% 65%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --primary: 217 91% 65%;
+    --primary-foreground: 222 47% 11%;
+    --destructive: 0 63% 55%;
+    --destructive-foreground: 210 40% 98%;
+
+    --evidence-uploaded: 217 91% 68%;
+    --evidence-verified: 152 55% 48%;
+    --evidence-org-trusted: 262 60% 68%;
+    --evidence-ai-reasoning: 35 92% 60%;
+    --evidence-conflicting: 0 70% 62%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+}

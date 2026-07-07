@@ -28,6 +28,7 @@ dependencies = [
   "gunicorn>=23",
   "pydantic>=2.9,<3",
   "pydantic-settings>=2.5,<3",
+  "email-validator>=2.2",            # backs pydantic's EmailStr
   "python-multipart>=0.0.12",
   "sse-starlette>=2.1",              # SSE served by backend, not Vercel (§23.3)
   # ── Data / persistence ────────────────────────────────────
@@ -89,7 +90,12 @@ select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "ASYNC", "S", "RUF"]
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+# S101 (assert) is idiomatic pytest. S105/S106/S107 (hardcoded-password
+# heuristics) false-positive constantly on test fixtures/defaults that pass
+# literal dummy secrets (e.g. JWT_SECRET_KEY="unit-test-secret...") to
+# arguments whose *names* just happen to match the keyword list — not a real
+# secret in any of these cases.
+"tests/**" = ["S101", "S105", "S106", "S107"]
 
 [tool.mypy]
 python_version = "3.12"
