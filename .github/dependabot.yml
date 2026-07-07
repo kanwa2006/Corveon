@@ -49,3 +49,10 @@ updates:
     labels: ["dependencies", "docker"]
     commit-message:
       prefix: "chore(docker)"
+    ignore:
+      # Python 3.12 is a pinned architecture decision (CLAUDE.md, docs/ARCHITECTURE.md,
+      # backend/pyproject.toml `requires-python`). A base-image bump past 3.12.x would
+      # break the build (pip enforces requires-python) without a corresponding ADR that
+      # supersedes the pin — so don't propose it as routine dependency churn.
+      - dependency-name: "python"
+        versions: [">=3.13"]
