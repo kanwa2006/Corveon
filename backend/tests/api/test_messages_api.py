@@ -204,6 +204,113 @@ async def test_send_message_grounds_answer_in_uploaded_document(
 
 
 @pytest.mark.asyncio
+async def test_export_message_as_markdown(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+
+    app.dependency_overrides[get_provider_registry] = lambda: ProviderRegistry(
+        {"stub": _StubProvider(["Grounded answer."])}, ["stub"]
+    )
+    try:
+        async with client.stream(
+            "POST",
+            f"/api/v1/chats/{chat_id}/messages",
+            json={"content": "hi"},
+            headers=headers,
+        ) as response:
+            raw = await response.aread()
+    finally:
+        app.dependency_overrides.pop(get_provider_registry, None)
+    done_event = next(json.loads(data) for kind, data in _parse_sse(raw.decode()) if kind == "done")
+    message_id = done_event["message_id"]
+
+    export_response = await client.post(
+        f"/api/v1/chats/{chat_id}/messages/{message_id}/export",
+        json={"format": "md"},
+        headers=headers,
+    )
+    assert export_response.status_code == 200
+    assert export_response.headers["content-type"].startswith("text/markdown")
+    assert "attachment" in export_response.headers["content-disposition"]
+    assert b"Grounded answer." in export_response.content
+
+
+@pytest.mark.asyncio
+async def test_export_message_as_pdf(client: AsyncClient, auth_headers: AuthHeaders, app) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+
+    app.dependency_overrides[get_provider_registry] = lambda: ProviderRegistry(
+        {"stub": _StubProvider(["Grounded answer."])}, ["stub"]
+    )
+    try:
+        async with client.stream(
+            "POST",
+            f"/api/v1/chats/{chat_id}/messages",
+            json={"content": "hi"},
+            headers=headers,
+        ) as response:
+            raw = await response.aread()
+    finally:
+        app.dependency_overrides.pop(get_provider_registry, None)
+    done_event = next(json.loads(data) for kind, data in _parse_sse(raw.decode()) if kind == "done")
+    message_id = done_event["message_id"]
+
+    export_response = await client.post(
+        f"/api/v1/chats/{chat_id}/messages/{message_id}/export",
+        json={"format": "pdf"},
+        headers=headers,
+    )
+    assert export_response.status_code == 200
+    assert export_response.headers["content-type"] == "application/pdf"
+    assert export_response.content.startswith(b"%PDF-")
+
+
+@pytest.mark.asyncio
+async def test_export_message_requires_owned_chat(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    alice = await auth_headers("alice@example.com")
+    bob = await auth_headers("bob@example.com")
+    chat_id = await _create_chat(client, alice)
+    response = await client.post(
+        f"/api/v1/chats/{chat_id}/messages/00000000-0000-0000-0000-000000000000/export",
+        json={"format": "md"},
+        headers=bob,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_nonexistent_message_is_404(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+    response = await client.post(
+        f"/api/v1/chats/{chat_id}/messages/00000000-0000-0000-0000-000000000000/export",
+        json={"format": "md"},
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_message_requires_authentication(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+    response = await client.post(
+        f"/api/v1/chats/{chat_id}/messages/00000000-0000-0000-0000-000000000000/export",
+        json={"format": "md"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_list_messages_requires_owned_chat(
     client: AsyncClient, auth_headers: AuthHeaders
 ) -> None:

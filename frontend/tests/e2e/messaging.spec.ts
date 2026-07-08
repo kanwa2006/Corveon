@@ -56,7 +56,7 @@ test.describe('messaging + documents', () => {
 
     const fixturePath = path.join(__dirname, 'fixtures', 'sample.pdf');
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: 'Upload PDF' }).click();
+    await page.getByRole('button', { name: 'Upload document' }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(fixturePath);
 

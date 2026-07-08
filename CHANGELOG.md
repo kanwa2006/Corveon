@@ -85,8 +85,150 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
   api (full upload → ARQ-ingestion → search → grounded-chat flow), database (RLS proofs for all
   five new tables), and security suites; frontend unit tests (Vitest) and Playwright e2e/a11y specs
   verified against a live backend + browser, not just structurally.
+- A full-stack **`e2e` CI job** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): stands up
+  Postgres+pgvector and Redis service containers, applies migrations, starts the FastAPI backend
+  and the ARQ worker, then runs the entire Playwright `tests/e2e` + `tests/a11y` suite against
+  Playwright's own built `next build && next start`. Closes the Week 1 roadmap item that previously
+  left e2e/a11y written but not CI-gated.
+- **Provider infrastructure hardening** (Roadmap Month 1, Phase 1): a per-provider circuit breaker
+  (`app/providers/health.py`) skips a repeatedly-failing provider for a cooldown window instead of
+  retrying it every request; a per-provider token-bucket rate limiter and a per-request
+  `LLMCallBudget` (`app/providers/budget.py`, CLAUDE.md §23.2) cap concurrent-request RPM and a
+  single request's total provider-call fan-out respectively; provider-call Prometheus metrics and
+  structured logs (`app/providers/metrics.py`) record every attempt, skip, success, and failure by
+  provider. All wired into `ProviderRegistry`/`build_provider_registry` and threaded through
+  `chat_orchestrator.stream_response` and the messages endpoint — the "absence of a provider is
+  never an error" posture (ADR-0006) is unchanged: health/rate-limit state is only ever consulted
+  for providers that are already configured. New settings (`GEMINI_RPM_LIMIT`,
+  `ANTHROPIC_RPM_LIMIT`, `OPENAI_RPM_LIMIT`, `OPENROUTER_RPM_LIMIT`, `OLLAMA_RPM_LIMIT`,
+  `PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD`, `PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS`)
+  documented in `.env.example`/`docs/ENVIRONMENT.md`. 22 new unit tests.
+- **Anthropic, OpenAI, and OpenRouter provider adapters** (Roadmap Month 1, Phase 2): an
+  `AnthropicProvider` (`app/providers/anthropic.py`) against the Messages API (SSE
+  `content_block_delta` events, top-level `system` field, required `max_tokens`, `x-api-key`
+  header) — genuinely different wire format from the OpenAI shape, so it gets its own adapter. An
+  `OpenAIProvider` and `OpenRouterProvider` share a new `OpenAICompatibleProvider` base
+  (`app/providers/openai_compatible.py`) — both expose the identical Chat Completions wire shape,
+  so the SSE-parsing/key-rotation logic lives once, keyed by `base_url`. All three wired into
+  `build_provider_registry()`, registered only when their key pool is configured (unconfigured
+  providers still never appear in the registry, ADR-0006), with their own token-bucket rate limits
+  when `*_RPM_LIMIT` is set. 14 new unit tests against `httpx.MockTransport`.
+- **Production routing policy** (Roadmap Month 1, Phase 3): the Week 1 binary fast-path/RAG router
+  is replaced with a 4-way routing policy (`RoutingPath`: `fast_path` / `pure_llm` / `rag_grounded`
+  / `rag_no_match`) built from two explicit steps in `app/orchestrator/chat_orchestrator.py` —
+  Query Understanding (`classify_intent`, a deterministic trivial-input allow-list rather than an
+  LLM call, since spending a provider round-trip just to classify would defeat the point of a
+  *low-latency* fast-path) and Task Planning (`_plan_task`, which combines that classification with
+  whether the chat has documents and whether retrieval actually found anything relevant). The
+  `routing_trace` now distinguishes "no documents to ground on" from "documents exist but none
+  matched," which the old binary path collapsed into one bucket. All Week 1 behavior is preserved
+  (existing API tests pass unchanged); the four remaining blueprint routing branches (public
+  evidence, org-trusted sources, multi-agent verification, external lookup) plug in as new steps in
+  this same pipeline once Month 3/6-12 build the subsystems they depend on. New unit tests in
+  `tests/unit/test_chat_orchestrator.py`.
+- **Multi-format ingestion** (Roadmap Month 1, Phase 4): `app/ingestion/parsing.py` gains
+  `parse_docx`, `parse_pptx`, `parse_markdown`, and `parse_image` (Tesseract OCR), plus a scanned-
+  page OCR fallback inside `parse_pdf` — a PDF page with no extractable text is rendered to an
+  image and OCR'd rather than silently dropped. A MIME-keyed `parse_document` registry is the
+  single dispatch point both the upload endpoint and the ARQ worker go through. The upload
+  endpoint's validation is reworked: the canonical MIME type (and storage-key extension) is now
+  derived from the file extension rather than trusted from the client's `Content-Type` header
+  (inconsistent across browsers, especially for `.md`), checked against per-format magic bytes
+  (DOCX/PPTX/PNG/JPEG) or UTF-8 decodability (Markdown). `.docx`/`.pptx`/`.md`/`.markdown`/`.png`/
+  `.jpg`/`.jpeg` join `.pdf` as accepted uploads, both in the API and the frontend file picker
+  (button relabeled "Upload PDF" → "Upload document"). CI gains a `tesseract-ocr` apt-get install
+  step in both the backend and e2e jobs — OCR tests need the real binary, not just the
+  `pytesseract` Python wrapper. `ocrmypdf` remains a declared-but-unused dependency; direct
+  PyMuPDF-render + Tesseract was sufficient for this scope and avoids subprocess/temp-file
+  complexity — documented in `app/ingestion/parsing.py` as a deliberate scoping choice, revisit if
+  OCR quality demands it. New unit tests in `tests/unit/test_parsing.py` plus new API-level
+  DOCX/Markdown full-pipeline tests in `tests/api/test_documents_api.py`.
+- **Export system** (Roadmap Month 1, Phase 5): `app/export/message_export.py` renders a message
+  to Markdown (raw UTF-8, lossless) or PDF (fpdf2, core Latin-1 font), preserving its citations
+  (`routing_trace.retrieved_chunks`) and metadata (role, timestamp, routing path/provider/status).
+  PDF has no bundled Unicode font — a small transliteration table covers common clinical symbols
+  (µ, °, ±, smart quotes/dashes) and anything else out of range becomes a visible `[?]` rather than
+  a silently-wrong character, a real concern on a clinical platform. New synchronous endpoint
+  `POST /api/v1/chats/{id}/messages/{mid}/export {format: md|pdf}` (matches the documented `200`
+  file contract — not an ARQ job) plus `MessageRepository.get_by_id_for_chat`. `fpdf2` promoted
+  from a transitive dependency (via `ocrmypdf`) to a direct one. Frontend gains a matching BFF
+  route (`app/api/chats/[chatId]/messages/[messageId]/export/route.ts`, cookie-authenticated —
+  not the SSE stream-ticket bridge, which is for streaming only) and export buttons on assistant
+  message bubbles.
+- **Observability — audit logging + distributed tracing** (Roadmap Month 1, Phase 6): an
+  append-only `audit_log` table (migration `0004`) — `actor_id`, `action`, `entity_type`,
+  `entity_id`, `ip`, and a JSONB `metadata` column (mapped from a Python `audit_metadata` attribute
+  to avoid colliding with SQLAlchemy's reserved `metadata` name) — written via a new
+  `AuditLogRepository` from every sensitive action CLAUDE.md §8 names: auth register/login/logout
+  and document upload/delete (already existing endpoints) plus the new message-export endpoint.
+  There is no admin-facing read endpoint yet, so `tests/database/test_audit_log.py` verifies rows
+  by querying the table directly — the honest ground truth for what exists today. Also adds
+  per-attempt OTel spans around each provider call (`provider.stream_chat`, recording
+  `provider.name`/`provider.outcome` and exceptions) and around orchestrator task planning and
+  response generation (`orchestrator.plan_task`, `orchestrator.generate_response`), alongside the
+  Prometheus counters/histograms and structlog `trace_id` propagation already in place since Week 1.
+  Grafana dashboards and Sentry are intentionally not wired up yet — there is no deployed
+  environment for either to point at.
+- **Expanded test matrix** (Roadmap Month 1, Phase 7): activates the two test layers
+  `docs/DEVELOPER.md` had declared but never wired — `schemathesis` and `locust` were dev
+  dependencies with zero tests exercising them. New CI job `contract` starts a live backend (same
+  pattern as the `e2e` job) and runs: (1) `schemathesis run` — property-based fuzzing against the
+  live OpenAPI schema, deliberately scoped to the `not_a_server_error` check only. Schemathesis's
+  in-process pytest integration (`schemathesis.pytest.from_fixture` + ASGI transport) was tried
+  first and hung indefinitely even at schema-collection time against this async FastAPI/asyncpg
+  stack; the CLI against a real running server (`schemathesis run <url>/openapi.json`) is the
+  stable path and is what's wired in. Broader built-in checks (`status_code_conformance` etc.) were
+  evaluated and excluded — most of this API's routes correctly return 401/404/422 for cases the
+  auto-generated OpenAPI metadata doesn't enumerate, which those checks treat as failures; that's a
+  documentation-completeness gap across ~20 endpoints, not a contract violation, and fixing it is
+  its own bounded follow-up. (2) A Locust concurrency smoke (`tests/performance/locustfile.py`,
+  `ChatUser`) covering register/login/list-chats/create-chat/list-messages — asserts zero request
+  failures under 5 concurrent users, not a latency threshold (shared CI runners don't give
+  reproducible latency numbers); run it locally for real throughput/latency figures.
 
 ### Fixed
+- `validation_error_handler` (`app/core/errors.py`) could itself raise while building a 422
+  response: Pydantic v2's `ValidationError.errors()` embeds the raw exception instance in
+  `ctx["error"]` for certain validators (here, FastAPI's own `UploadFile`-vs-plain-field type
+  coercion), and that's not JSON-serializable — `JSONResponse.render()` then crashed with
+  `TypeError: Object of type ValueError is not JSON serializable`, turning what should have been a
+  clean 422 into an unrelated 500. Found by the new schemathesis contract job fuzzing document
+  upload with a `file` multipart field sent without a filename (which decodes to a plain string,
+  not an `UploadFile`). Fixed by dropping `ctx` (internal debug context, not meant for API
+  consumers) from each error dict and routing the rest through `jsonable_encoder` for defense in
+  depth; regression test in `tests/api/test_documents_api.py`.
+- fpdf2's `multi_cell` leaves the text cursor at the end of the last line by default rather than
+  resetting it to the left margin — a second `multi_cell` call then computed almost zero available
+  width and raised `FPDFException: Not enough horizontal space to render a single character`.
+  Caught by the new export tests, not manual testing. Fixed with a small `_write_paragraph` helper
+  that always passes `new_x=XPos.LMARGIN, new_y=YPos.NEXT` explicitly.
+- The frontend's `RoutingTrace` TypeScript type still only listed the Week 1 binary
+  `'fast_path' | 'rag_grounded'` path and `'ok' | 'provider_unavailable'` status — stale since the
+  Month 1 Phase 1 (`budget_exceeded`) and Phase 3 (`pure_llm`, `rag_no_match`) backend changes.
+  Caught while wiring the export UI, not by a type error (the field is read loosely as a string in
+  most places) — fixed to match the backend's actual `RoutingPath`/status values.
+
+### Fixed
+- `ChatList`'s empty state rendered its own "New chat" button directly beneath the page header's
+  persistent "New chat" button — the same action offered twice on screen, which also gave two
+  interactive elements an identical accessible name. Removed the redundant empty-state action.
+- The chat-title rename `<Input>` had no accessible label at all (an unlabeled form control);
+  added `aria-label="Chat title"`.
+- The login and register pages had no `<h1>` — `CardTitle` always rendered `<h2>` (correct for a
+  card that's a subsection of a page with its own heading, e.g. the dashboard's "Recent chats"),
+  but wrong where the card *is* the page's only heading. Added an `as` prop to `CardTitle` and set
+  `as="h1"` on the auth forms.
+- Several Playwright e2e specs used locators that were ambiguous but had gone undetected: `getByText(email)`
+  matched both the app-shell nav and the dashboard heading; `getByRole('alert')` matched both the
+  login error and Next.js's own route announcer; `getByText(<chat title>)` matched both a chat's
+  visible title and its own (hidden, closed) delete-confirmation dialog description repeating that
+  title; `page.locator('main input')` matched both the rename input and a hidden file-upload input.
+  Scoped each to a specific role/label instead.
+- Two e2e tests read `page.url()` or navigated immediately after a client-side action without
+  waiting for the resulting navigation/redirect to actually land, occasionally racing the still-
+  mounted previous page (a register-then-login test filling login fields into stale register-form
+  inputs; a cross-user chat-isolation test capturing the `/chats` list URL instead of the new
+  chat's URL). Added the same `await expect(page).toHaveURL(...)` wait already used elsewhere.
 - `useUpdateChat`'s optimistic-update cache write matched query keys by the bare `['chats']`
   prefix, which also matched the single-object chat-detail cache entry; calling `.map()` on that
   non-array entry threw inside `onMutate`, silently aborting every rename/pin/archive mutation

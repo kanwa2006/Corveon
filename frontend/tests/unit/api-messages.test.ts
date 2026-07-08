@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '@/lib/api/auth';
-import { listMessages, streamMessage } from '@/lib/api/messages';
+import { exportMessage, listMessages, streamMessage } from '@/lib/api/messages';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -52,6 +52,77 @@ describe('lib/api/messages', () => {
         jsonResponse({ error_code: 'not_found', message: 'Chat not found.' }, 404),
       );
       await expect(listMessages('missing')).rejects.toBeInstanceOf(ApiError);
+    });
+  });
+
+  describe('exportMessage', () => {
+    beforeEach(() => {
+      vi.stubGlobal('URL', {
+        ...URL,
+        createObjectURL: vi.fn().mockReturnValue('blob:fake-url'),
+        revokeObjectURL: vi.fn(),
+      });
+    });
+
+    it('posts the format and triggers a download with the server-provided filename', async () => {
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      const blob = new Blob(['# Title'], { type: 'text/markdown' });
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(blob, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/markdown',
+            'Content-Disposition': 'attachment; filename="abc123.md"',
+          },
+        }),
+      );
+
+      await exportMessage('c1', 'm1', 'md');
+
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/chats/c1/messages/m1/export',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ format: 'md' }),
+        }),
+      );
+      expect(clickSpy).toHaveBeenCalledOnce();
+      clickSpy.mockRestore();
+    });
+
+    it('falls back to a generic filename when no Content-Disposition header is present', async () => {
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(new Blob(['%PDF-1.4']), { status: 200 }),
+      );
+
+      let capturedHref = '';
+      const originalCreateElement = document.createElement.bind(document);
+      vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+        const el = originalCreateElement(tag);
+        if (tag === 'a') {
+          Object.defineProperty(el, 'download', {
+            set(value: string) {
+              capturedHref = value;
+            },
+            get() {
+              return capturedHref;
+            },
+          });
+        }
+        return el;
+      });
+
+      await exportMessage('c1', 'm1', 'pdf');
+
+      expect(capturedHref).toBe('message.pdf');
+      clickSpy.mockRestore();
+      vi.mocked(document.createElement).mockRestore();
+    });
+
+    it('throws ApiError when the export request fails', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 404 }));
+      await expect(exportMessage('c1', 'missing', 'md')).rejects.toBeInstanceOf(ApiError);
     });
   });
 

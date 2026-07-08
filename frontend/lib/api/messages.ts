@@ -18,12 +18,14 @@ export interface RetrievedChunk {
 }
 
 export interface RoutingTrace {
-  path: 'fast_path' | 'rag_grounded';
+  path: 'fast_path' | 'pure_llm' | 'rag_grounded' | 'rag_no_match';
   provider: string | null;
   retrieved_chunks: RetrievedChunk[];
   duration_ms: number;
-  status: 'ok' | 'provider_unavailable';
+  status: 'ok' | 'provider_unavailable' | 'budget_exceeded';
 }
+
+export type ExportFormat = 'md' | 'pdf';
 
 export interface MessagePublic {
   id: string;
@@ -45,6 +47,40 @@ export async function listMessages(chatId: string): Promise<MessagePublic[]> {
     );
   }
   return (await response.json()) as MessagePublic[];
+}
+
+/**
+ * Exports a message as a file download — a plain authenticated request
+ * through the normal cookie-session BFF route (unlike streaming, this isn't
+ * SSE, so it doesn't need the stream-ticket bridge, ADR-0016).
+ */
+export async function exportMessage(
+  chatId: string,
+  messageId: string,
+  format: ExportFormat,
+): Promise<void> {
+  const response = await fetch(`/api/chats/${chatId}/messages/${messageId}/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format }),
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, 'export_failed', 'Could not export this message.');
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const filenameMatch = /filename="([^"]+)"/.exec(disposition);
+  const filename = filenameMatch?.[1] ?? `message.${format}`;
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 const SSE_BASE_URL = process.env.NEXT_PUBLIC_SSE_BASE_URL ?? 'http://localhost:8000';

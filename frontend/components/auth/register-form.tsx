@@ -49,7 +49,7 @@ export function RegisterForm(): React.JSX.Element {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Create your Corveon account</CardTitle>
+        <CardTitle as="h1">Create your Corveon account</CardTitle>
         <CardDescription>
           A human-in-the-loop assistant for licensed professionals — never a replacement for
           clinical judgment.

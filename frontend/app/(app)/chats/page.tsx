@@ -88,7 +88,6 @@ export default function ChatsPage(): React.JSX.Element {
           pinned: tab === 'pinned' ? true : undefined,
           archived: tab === 'archived' ? true : undefined,
         }}
-        onCreateChat={handleCreateChat}
       />
     </div>
   );

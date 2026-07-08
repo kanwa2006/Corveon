@@ -38,10 +38,14 @@ test.describe('chats', () => {
 
     // Rename
     await page.getByRole('button', { name: 'Rename chat' }).click();
-    const titleInput = page.locator('main input');
+    const titleInput = page.getByLabel('Chat title');
     await titleInput.fill('Renal dosing question');
     await titleInput.press('Enter');
-    await expect(page.getByText('Renal dosing question')).toBeVisible();
+    // Not getByText — the (hidden, closed) delete-confirmation dialog further
+    // down the DOM also contains this title in its description text.
+    await expect(page.getByRole('button', { name: 'Rename chat' })).toHaveText(
+      'Renal dosing question',
+    );
 
     // Pin
     await page.getByRole('button', { name: 'Pin chat' }).click();
@@ -55,9 +59,10 @@ test.describe('chats', () => {
     await page.getByRole('link', { name: 'Back to chats' }).click();
     await expect(page.getByText('Start your first chat')).toBeVisible();
 
-    // Archived tab shows it, pinned
+    // Archived tab shows it, pinned. Scoped to the list-item link — its own
+    // (hidden, closed) delete-confirmation dialog also contains this title.
     await page.getByRole('tab', { name: 'Archived' }).click();
-    await expect(page.getByText('Renal dosing question')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Renal dosing question' })).toBeVisible();
 
     // Delete via the list item's menu
     await page.getByRole('button', { name: /Actions for/ }).click();
@@ -72,19 +77,24 @@ test.describe('chats', () => {
     await page.goto('/chats');
     await page.getByRole('button', { name: 'New chat' }).click();
     await page.getByRole('button', { name: 'Rename chat' }).click();
-    await page.locator('main input').fill('Renal dosing question');
-    await page.locator('main input').press('Enter');
+    await page.getByLabel('Chat title').fill('Renal dosing question');
+    await page.getByLabel('Chat title').press('Enter');
 
     await page.getByRole('link', { name: 'Back to chats' }).click();
     await page.getByRole('button', { name: 'New chat' }).click();
     await page.getByRole('link', { name: 'Back to chats' }).click();
 
-    await expect(page.getByText('Renal dosing question')).toBeVisible();
-    await expect(page.getByText('New chat')).toBeVisible();
+    // Scoped to the list-item link (not getByText) — the page header also has
+    // a persistent "New chat" button with the same text, and each list item's
+    // own (hidden, closed) delete-confirmation dialog repeats its title in
+    // its description text, both of which would otherwise make a plain
+    // getByText(...) locator ambiguous.
+    await expect(page.getByRole('link', { name: 'Renal dosing question' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'New chat' })).toBeVisible();
 
     await page.getByPlaceholder('Search chats…').fill('renal');
-    await expect(page.getByText('Renal dosing question')).toBeVisible();
-    await expect(page.getByText('New chat')).not.toBeVisible();
+    await expect(page.getByRole('link', { name: 'Renal dosing question' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'New chat' })).not.toBeVisible();
   });
 
   test('a chat is not visible to a different user', async ({ page, context }) => {
@@ -92,6 +102,10 @@ test.describe('chats', () => {
     await registerAndLogin(page, ownerEmail);
     await page.goto('/chats');
     await page.getByRole('button', { name: 'New chat' }).click();
+    // Wait for the client-side navigation to actually land on the new
+    // chat's URL before capturing it — reading page.url() immediately after
+    // the click can still show the list page's URL.
+    await expect(page).toHaveURL(/\/chats\/[0-9a-f-]+/);
     const chatUrl = page.url();
 
     // Fresh, unauthenticated context — a different user.

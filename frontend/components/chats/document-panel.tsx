@@ -51,12 +51,12 @@ export function DocumentPanel({
           onClick={() => fileInputRef.current?.click()}
         >
           <Paperclip className="h-3.5 w-3.5" />
-          Upload PDF
+          Upload document
         </Button>
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/pdf"
+          accept=".pdf,.docx,.pptx,.md,.markdown,.png,.jpg,.jpeg"
           className="hidden"
           onChange={handleFileChange}
         />
@@ -64,7 +64,7 @@ export function DocumentPanel({
 
       {documents.length === 0 && Object.keys(uploads).length === 0 && (
         <p className="text-xs text-muted-foreground">
-          Upload a PDF to ground answers in your own documents.
+          Upload a document to ground answers in your own files.
         </p>
       )}
 

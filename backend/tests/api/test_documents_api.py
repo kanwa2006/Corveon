@@ -6,6 +6,7 @@ in-process, matching how ARQ task functions are conventionally tested."""
 
 from __future__ import annotations
 
+import io
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -14,6 +15,7 @@ import pytest
 from app.core.config import get_settings
 from app.ingestion.embeddings import get_embedding_model
 from app.workers.tasks import run_ingestion
+from docx import Document as DocxDocument
 from httpx import AsyncClient
 
 pytestmark = pytest.mark.api
@@ -141,6 +143,26 @@ async def test_upload_requires_authentication(
 
 
 @pytest.mark.asyncio
+async def test_upload_with_file_field_sent_as_plain_form_value_is_a_clean_422(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    """A ``file`` multipart part with no filename decodes to a plain string,
+    not an ``UploadFile`` — FastAPI's resulting validation error embeds a raw
+    (non-JSON-serializable) ``ValueError`` in ``ctx``, which previously
+    crashed ``validation_error_handler`` itself into an unrelated 500 instead
+    of the intended 422 (found via schemathesis property-based fuzzing)."""
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+    response = await client.post(
+        f"/api/v1/chats/{chat_id}/documents",
+        data={"file": "not-a-file"},
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "validation_error"
+
+
+@pytest.mark.asyncio
 async def test_upload_accepts_valid_pdf_and_enqueues_job(
     client: AsyncClient, auth_headers: AuthHeaders
 ) -> None:
@@ -203,6 +225,106 @@ async def test_full_ingestion_pipeline_creates_searchable_chunks(
     assert len(hits) >= 1
     assert "Metformin" in hits[0]["text"]
     assert hits[0]["document_id"] == document_id
+
+
+def _make_docx_bytes(text: str = _DIABETES_TEXT) -> bytes:
+    doc = DocxDocument()
+    doc.add_paragraph(text)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_full_ingestion_pipeline_supports_docx(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    """Proves the parser-registry dispatch actually reaches app/ingestion/
+    parsing.py's DOCX path end to end (upload -> worker -> searchable), not
+    just that parse_docx() works in isolation."""
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+    user_id = await _current_user_id(client, headers)
+
+    upload = await client.post(
+        f"/api/v1/chats/{chat_id}/documents",
+        files={
+            "file": (
+                "notes.docx",
+                _make_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=headers,
+    )
+    assert upload.status_code == 202
+    job_id = upload.json()["job_id"]
+    document_id = (await client.get(f"/api/v1/chats/{chat_id}/documents", headers=headers)).json()[
+        0
+    ]["id"]
+
+    await _run_worker(app, job_id, document_id, chat_id, user_id)
+
+    job_response = await client.get(f"/api/v1/jobs/{job_id}", headers=headers)
+    assert job_response.json()["status"] == "succeeded"
+
+    search_response = await client.post(
+        f"/api/v1/chats/{chat_id}/search",
+        json={"query": "What treats type 2 diabetes?"},
+        headers=headers,
+    )
+    assert len(search_response.json()) >= 1
+
+
+@pytest.mark.asyncio
+async def test_full_ingestion_pipeline_supports_markdown(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+    user_id = await _current_user_id(client, headers)
+
+    upload = await client.post(
+        f"/api/v1/chats/{chat_id}/documents",
+        files={
+            "file": (
+                "notes.md",
+                f"# Diabetes\n\n{_DIABETES_TEXT}".encode(),
+                "text/markdown",
+            )
+        },
+        headers=headers,
+    )
+    assert upload.status_code == 202
+    job_id = upload.json()["job_id"]
+    document_id = (await client.get(f"/api/v1/chats/{chat_id}/documents", headers=headers)).json()[
+        0
+    ]["id"]
+
+    await _run_worker(app, job_id, document_id, chat_id, user_id)
+
+    job_response = await client.get(f"/api/v1/jobs/{job_id}", headers=headers)
+    assert job_response.json()["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_docx_with_mismatched_magic_bytes(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+    response = await client.post(
+        f"/api/v1/chats/{chat_id}/documents",
+        files={
+            "file": (
+                "fake.docx",
+                b"not a real docx body",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

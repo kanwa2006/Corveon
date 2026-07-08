@@ -30,7 +30,12 @@ from app.data.repositories.job_repository import JobRepository
 from app.data.rls import commit_and_reapply_rls, set_rls_user
 from app.ingestion.chunking import chunk_pages
 from app.ingestion.embeddings import EmbeddingModel
-from app.ingestion.parsing import DocumentParseError, DocumentTooLargeError, parse_pdf
+from app.ingestion.parsing import (
+    DocumentParseError,
+    DocumentTooLargeError,
+    UnsupportedDocumentTypeError,
+    parse_document,
+)
 
 logger = get_logger(__name__)
 tracer = get_tracer(__name__)
@@ -72,7 +77,7 @@ async def run_ingestion(
                 await job_repo.update_progress(job, progress_stage="extracting")
                 await commit_and_reapply_rls(session, user_id)
                 raw_bytes = await storage.get(document.storage_key)
-                parsed = await asyncio.to_thread(parse_pdf, raw_bytes)
+                parsed = await asyncio.to_thread(parse_document, raw_bytes, document.mime_type)
 
             with tracer.start_as_current_span("ingestion.chunk"):
                 await job_repo.update_progress(job, progress_stage="chunking")
@@ -106,7 +111,12 @@ async def run_ingestion(
 
             logger.info("ingestion_succeeded", job_id=str(job_id), document_id=str(document_id))
 
-        except (DocumentParseError, DocumentTooLargeError, ObjectNotFoundError) as exc:
+        except (
+            DocumentParseError,
+            DocumentTooLargeError,
+            UnsupportedDocumentTypeError,
+            ObjectNotFoundError,
+        ) as exc:
             # Expected, user-facing failure modes: bad upload content. The
             # message is safe to surface (no internals/PII) — CLAUDE.md §10
             # forbids silencing errors, not surfacing a clear typed one.

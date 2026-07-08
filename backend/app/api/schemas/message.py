@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.data.models.message import MessageRole
+from app.export.message_export import ExportFormat
 
 
 class MessageCreateRequest(BaseModel):
@@ -31,3 +32,7 @@ class DoneEvent(BaseModel):
 
     message_id: uuid.UUID
     routing_trace: dict[str, Any] | None
+
+
+class ExportRequest(BaseModel):
+    format: ExportFormat

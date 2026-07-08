@@ -1,9 +1,10 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { FileText, Sparkles, User } from 'lucide-react';
+import { Download, FileText, Sparkles, User } from 'lucide-react';
+import { useState } from 'react';
 
-import type { MessagePublic } from '@/lib/api/messages';
+import { exportMessage, type ExportFormat, type MessagePublic } from '@/lib/api/messages';
 import { cn } from '@/lib/utils';
 
 interface MessageBubbleProps {
@@ -13,6 +14,17 @@ interface MessageBubbleProps {
 export function MessageBubble({ message }: MessageBubbleProps): React.JSX.Element {
   const isUser = message.role === 'user';
   const citations = message.routing_trace?.retrieved_chunks ?? [];
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
+
+  const handleExport = (format: ExportFormat): void => {
+    setExportingFormat(format);
+    exportMessage(message.chat_id, message.id, format)
+      .catch(() => {
+        // A failed export is a minor, retryable inconvenience, not worth a
+        // blocking error banner on top of the conversation itself.
+      })
+      .finally(() => setExportingFormat(null));
+  };
 
   return (
     <motion.div
@@ -62,6 +74,33 @@ export function MessageBubble({ message }: MessageBubbleProps): React.JSX.Elemen
           <p className="text-xs text-muted-foreground">
             No AI provider was reachable — a known degraded state, not an error in your request.
           </p>
+        )}
+
+        {!isUser && message.content && (
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => handleExport('md')}
+              disabled={exportingFormat !== null}
+              aria-label="Export as Markdown"
+              title="Export as Markdown"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <Download className="h-3 w-3" aria-hidden="true" />
+              Markdown
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExport('pdf')}
+              disabled={exportingFormat !== null}
+              aria-label="Export as PDF"
+              title="Export as PDF"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <Download className="h-3 w-3" aria-hidden="true" />
+              PDF
+            </button>
+          </div>
         )}
       </div>
     </motion.div>

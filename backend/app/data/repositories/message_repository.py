@@ -21,6 +21,12 @@ class MessageRepository:
         )
         return list(result.scalars().all())
 
+    async def get_by_id_for_chat(self, message_id: uuid.UUID, chat_id: uuid.UUID) -> Message | None:
+        result = await self._session.execute(
+            select(Message).where(Message.id == message_id, Message.chat_id == chat_id)
+        )
+        return result.scalar_one_or_none()
+
     async def create(
         self,
         *,

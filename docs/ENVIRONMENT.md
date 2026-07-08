@@ -56,13 +56,16 @@ come from the environment only — never code, never the database.
 | Var | Meaning |
 |---|---|
 | `GEMINI_API_KEYS` / `GEMINI_DEFAULT_MODEL` | comma-separated key pool; default model |
-| `ANTHROPIC_API_KEYS` / `ANTHROPIC_DEFAULT_MODEL` | optional high-quality reasoning |
-| `OPENAI_API_KEYS` / `OPENAI_DEFAULT_MODEL` | optional |
-| `OPENROUTER_API_KEYS` / `OPENROUTER_DEFAULT_MODEL` | fallback + model breadth |
-| `OLLAMA_BASE_URL` / `OLLAMA_DEFAULT_MODEL` | implicit local default when reachable |
+| `GEMINI_RPM_LIMIT` | token-bucket cap shared across requests, default `10`; blank = unlimited |
+| `ANTHROPIC_API_KEYS` / `ANTHROPIC_DEFAULT_MODEL` / `ANTHROPIC_RPM_LIMIT` | optional high-quality reasoning |
+| `OPENAI_API_KEYS` / `OPENAI_DEFAULT_MODEL` / `OPENAI_RPM_LIMIT` | optional |
+| `OPENROUTER_API_KEYS` / `OPENROUTER_DEFAULT_MODEL` / `OPENROUTER_RPM_LIMIT` | fallback + model breadth; default RPM `20` (free-tier ceiling) |
+| `OLLAMA_BASE_URL` / `OLLAMA_DEFAULT_MODEL` / `OLLAMA_RPM_LIMIT` | implicit local default when reachable; unlimited by default |
 | `PROVIDER_PRIORITY` | ordered provider names, highest first |
 | `SENSITIVE_TEXT_PROVIDER` | provider for org-trusted/sensitive text (default `ollama`) |
 | `LLM_CALLS_PER_REQUEST_BUDGET` | per-request fan-out cap (§23.2) |
+| `PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | consecutive failures before a provider's circuit opens (default `3`) |
+| `PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS` | how long a circuit stays open before a half-open probe (default `30`) |
 
 ## External medical APIs
 | Var | Meaning |

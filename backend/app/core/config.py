@@ -70,17 +70,31 @@ class Settings(BaseSettings):
     # ── AI providers — all optional (§23.1, ADR-0006) ────────
     GEMINI_API_KEYS: str | None = None
     GEMINI_DEFAULT_MODEL: str = "gemini-2.5-flash-lite"
+    # Conservative default matching the documented Gemini free-tier Flash
+    # RPM (blueprint §5) — override per your actual model/plan. None = no
+    # token-bucket rate limiting applied to this provider.
+    GEMINI_RPM_LIMIT: int | None = 10
     ANTHROPIC_API_KEYS: str | None = None
     ANTHROPIC_DEFAULT_MODEL: str = "claude-sonnet-5"
+    ANTHROPIC_RPM_LIMIT: int | None = None
     OPENAI_API_KEYS: str | None = None
     OPENAI_DEFAULT_MODEL: str = "gpt-4.1-mini"
+    OPENAI_RPM_LIMIT: int | None = None
     OPENROUTER_API_KEYS: str | None = None
     OPENROUTER_DEFAULT_MODEL: str | None = None
+    # OpenRouter's free-tier cap never rises with credits (blueprint §5).
+    OPENROUTER_RPM_LIMIT: int | None = 20
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_DEFAULT_MODEL: str = "llama3.1"
+    # Local inference has no vendor rate limit by default.
+    OLLAMA_RPM_LIMIT: int | None = None
     PROVIDER_PRIORITY: str = "gemini,openrouter,ollama"
     SENSITIVE_TEXT_PROVIDER: str = "ollama"
     LLM_CALLS_PER_REQUEST_BUDGET: int = 8
+    # Consecutive provider failures before its circuit breaker opens, and how
+    # long it then stays open before allowing a half-open probe (§23.1).
+    PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 3
+    PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS: float = 30.0
 
     # ── External medical APIs ────────────────────────────────
     OPENFDA_API_KEY: str | None = None

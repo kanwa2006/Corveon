@@ -9,9 +9,14 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
+from app.providers.anthropic import AnthropicProvider
 from app.providers.base import ChatMessage, ChatProvider, ChatRole, ProviderUnavailableError
+from app.providers.budget import LLMCallBudget, LLMCallBudgetExceededError, TokenBucket
 from app.providers.gemini import GeminiProvider
+from app.providers.health import ProviderHealthTracker
 from app.providers.ollama import OllamaProvider
+from app.providers.openai import OpenAIProvider
+from app.providers.openrouter import OpenRouterProvider
 from app.providers.registry import NoProviderAvailableError, ProviderRegistry
 
 pytestmark = pytest.mark.unit
@@ -152,6 +157,155 @@ async def test_ollama_provider_raises_provider_unavailable_on_http_error() -> No
             pass
 
 
+# ── Anthropic ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_anthropic_provider_streams_text_deltas() -> None:
+    body = b"\n".join(
+        [
+            b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}',
+            b"",
+            b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":" world"}}',
+            b"",
+            b'data: {"type":"message_stop"}',
+            b"",
+        ]
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body)
+
+    provider = AnthropicProvider(
+        api_keys=["fake-key"], default_model="claude-sonnet-5", transport=_transport(handler)
+    )
+    deltas = [d async for d in provider.stream_chat(messages=_A_MESSAGE)]
+    assert deltas == ["Hello", " world"]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_provider_raises_provider_unavailable_on_http_error() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(529, content=b"")
+
+    provider = AnthropicProvider(
+        api_keys=["fake-key"], default_model="m", transport=_transport(handler)
+    )
+    with pytest.raises(ProviderUnavailableError):
+        async for _ in provider.stream_chat(messages=_A_MESSAGE):
+            pass
+
+
+def test_anthropic_provider_rejects_empty_key_pool() -> None:
+    with pytest.raises(ValueError, match="at least one API key"):
+        AnthropicProvider(api_keys=[], default_model="m")
+
+
+@pytest.mark.asyncio
+async def test_anthropic_provider_sends_system_as_top_level_field() -> None:
+    captured: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.read()
+        captured["headers"] = request.headers
+        return httpx.Response(200, content=b"")
+
+    provider = AnthropicProvider(api_keys=["k"], default_model="m", transport=_transport(handler))
+    messages = [
+        ChatMessage(role=ChatRole.SYSTEM, content="Be concise."),
+        ChatMessage(role=ChatRole.USER, content="hi"),
+    ]
+    async for _ in provider.stream_chat(messages=messages):
+        pass
+
+    body = json.loads(captured["body"])  # type: ignore[arg-type]
+    assert body["system"] == "Be concise."
+    assert body["messages"] == [{"role": "user", "content": "hi"}]
+    assert body["max_tokens"] > 0
+    headers = captured["headers"]
+    assert headers["x-api-key"] == "k"  # type: ignore[index]
+    assert headers["anthropic-version"]  # type: ignore[index]
+
+
+# ── OpenAI / OpenRouter (shared OpenAI-compatible wire format) ────────────
+
+
+@pytest.mark.parametrize("provider_cls", [OpenAIProvider, OpenRouterProvider])
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_streams_text_deltas(
+    provider_cls: type[OpenAIProvider] | type[OpenRouterProvider],
+) -> None:
+    body = b"\n".join(
+        [
+            b'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+            b"",
+            b'data: {"choices":[{"delta":{"content":" world"}}]}',
+            b"",
+            b"data: [DONE]",
+            b"",
+        ]
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body)
+
+    provider = provider_cls(
+        api_keys=["fake-key"], default_model="a-model", transport=_transport(handler)
+    )
+    deltas = [d async for d in provider.stream_chat(messages=_A_MESSAGE)]
+    assert deltas == ["Hello", " world"]
+
+
+@pytest.mark.parametrize("provider_cls", [OpenAIProvider, OpenRouterProvider])
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_raises_provider_unavailable_on_http_error(
+    provider_cls: type[OpenAIProvider] | type[OpenRouterProvider],
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, content=b"")
+
+    provider = provider_cls(api_keys=["fake-key"], default_model="m", transport=_transport(handler))
+    with pytest.raises(ProviderUnavailableError):
+        async for _ in provider.stream_chat(messages=_A_MESSAGE):
+            pass
+
+
+@pytest.mark.parametrize("provider_cls", [OpenAIProvider, OpenRouterProvider])
+def test_openai_compatible_provider_rejects_empty_key_pool(
+    provider_cls: type[OpenAIProvider] | type[OpenRouterProvider],
+) -> None:
+    with pytest.raises(ValueError, match="at least one API key"):
+        provider_cls(api_keys=[], default_model="m")
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_raises_when_no_model_configured() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"")
+
+    provider = OpenAIProvider(api_keys=["k"], default_model=None, transport=_transport(handler))
+    with pytest.raises(ProviderUnavailableError, match="no model specified"):
+        async for _ in provider.stream_chat(messages=_A_MESSAGE):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_rotates_through_key_pool() -> None:
+    seen_auth: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen_auth.append(request.headers["Authorization"])
+        return httpx.Response(200, content=b"")
+
+    provider = OpenAIProvider(
+        api_keys=["key1", "key2"], default_model="m", transport=_transport(handler)
+    )
+    for _ in range(3):
+        async for _ in provider.stream_chat(messages=_A_MESSAGE):
+            pass
+    assert seen_auth == ["Bearer key1", "Bearer key2", "Bearer key1"]
+
+
 # ── Registry ─────────────────────────────────────────────────────────────
 
 
@@ -239,3 +393,79 @@ async def test_registry_appends_unlisted_providers_after_priority_order() -> Non
     )
     results = [r async for r in registry.stream_chat(messages=_A_MESSAGE)]
     assert results == [("c", "z")]
+
+
+# ── Registry x health / budget / rate-limit integration ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_registry_skips_a_provider_whose_circuit_is_open() -> None:
+    health = ProviderHealthTracker(failure_threshold=1)
+    health.record_failure("a")  # opens "a"'s circuit before any call is made
+    registry = ProviderRegistry(
+        {"a": _FakeProvider("a", ["x"]), "b": _FakeProvider("b", ["y"])},
+        ["a", "b"],
+        health=health,
+    )
+    results = [r async for r in registry.stream_chat(messages=_A_MESSAGE)]
+    assert results == [("b", "y")]
+
+
+@pytest.mark.asyncio
+async def test_registry_records_failure_against_health_tracker() -> None:
+    health = ProviderHealthTracker(failure_threshold=2)
+    registry = ProviderRegistry(
+        {"a": _FakeProvider("a", [], always_fail=True), "b": _FakeProvider("b", ["y"])},
+        ["a", "b"],
+        health=health,
+    )
+    async for _ in registry.stream_chat(messages=_A_MESSAGE):
+        pass
+    assert health.snapshot()["a"]["consecutive_failures"] == 1
+
+
+@pytest.mark.asyncio
+async def test_registry_records_success_against_health_tracker() -> None:
+    health = ProviderHealthTracker(failure_threshold=1)
+    health.record_failure("a")  # would normally open the circuit...
+    health.record_success("a")  # ...but a success clears it again
+    registry = ProviderRegistry({"a": _FakeProvider("a", ["x"])}, ["a"], health=health)
+    results = [r async for r in registry.stream_chat(messages=_A_MESSAGE)]
+    assert results == [("a", "x")]
+
+
+@pytest.mark.asyncio
+async def test_registry_skips_a_provider_whose_token_bucket_is_empty() -> None:
+    empty_bucket = TokenBucket(capacity=1, refill_rate_per_second=0)
+    empty_bucket.try_consume()  # drain it before the registry ever calls it
+    registry = ProviderRegistry(
+        {"a": _FakeProvider("a", ["x"]), "b": _FakeProvider("b", ["y"])},
+        ["a", "b"],
+        token_buckets={"a": empty_bucket},
+    )
+    results = [r async for r in registry.stream_chat(messages=_A_MESSAGE)]
+    assert results == [("b", "y")]
+
+
+@pytest.mark.asyncio
+async def test_registry_consumes_budget_only_for_providers_actually_attempted() -> None:
+    health = ProviderHealthTracker(failure_threshold=1)
+    health.record_failure("skipped")  # circuit-open: never actually attempted
+    registry = ProviderRegistry(
+        {"skipped": _FakeProvider("skipped", ["x"]), "b": _FakeProvider("b", ["y"])},
+        ["skipped", "b"],
+        health=health,
+    )
+    budget = LLMCallBudget(max_calls=1)
+    results = [r async for r in registry.stream_chat(messages=_A_MESSAGE, budget=budget)]
+    assert results == [("b", "y")]
+    assert budget.calls_made == 1
+
+
+@pytest.mark.asyncio
+async def test_registry_propagates_budget_exceeded_before_trying_a_provider() -> None:
+    registry = ProviderRegistry({"a": _FakeProvider("a", ["x"])}, ["a"])
+    exhausted_budget = LLMCallBudget(max_calls=0)
+    with pytest.raises(LLMCallBudgetExceededError):
+        async for _ in registry.stream_chat(messages=_A_MESSAGE, budget=exhausted_budget):
+            pass

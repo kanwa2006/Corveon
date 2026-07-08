@@ -100,6 +100,7 @@ export default function ChatDetailPage(): React.JSX.Element {
             {isEditingTitle ? (
               <Input
                 autoFocus
+                aria-label="Chat title"
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
                 onBlur={submitTitle}
