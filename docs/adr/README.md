@@ -19,5 +19,8 @@ once `Accepted`; to change a decision, add a new ADR that supersedes the old one
 | [0011](0011-arq-over-celery.md) | ARQ over Celery for the async task queue | Accepted |
 | [0012](0012-frontend-auth-cookie-bff-proxy.md) | httpOnly-cookie session via Next.js Route Handler BFF proxy | Accepted |
 | [0013](0013-postgres-rls-requires-nonsuperuser-app-role.md) | Postgres RLS requires a genuine non-superuser app role | Accepted |
+| [0014](0014-local-disk-storage-fallback.md) | Local-disk object storage fallback when R2 is unconfigured | Accepted |
+| [0015](0015-hnsw-index-via-raw-migration-ddl.md) | `chunk_embeddings` HNSW index via raw migration DDL, not a tracked model `Index` | Accepted |
+| [0016](0016-sse-stream-ticket-bridge.md) | Short-lived stream ticket bridges httpOnly-cookie auth to direct-to-backend SSE | Accepted |
 
 New ADRs use [`_template.md`](_template.md) and the next sequential number.

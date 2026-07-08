@@ -87,6 +87,9 @@ docker-compose.override.yml
 *.log
 logs/
 
+# ─── Local object-storage fallback (ADR-0014) ───────────────────────────
+backend/.data/
+
 # ─── Editors / IDEs ─────────────────────────────────────────────────────
 .idea/
 *.iml

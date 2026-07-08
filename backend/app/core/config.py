@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     R2_BUCKET: str = "corveon-documents"
     R2_ENDPOINT: str | None = None
     R2_SIGNED_URL_TTL_SECONDS: int = 300
+    # Dev/test fallback when R2 is not configured (ADR-0014); gitignored.
+    LOCAL_STORAGE_DIR: str = ".data/documents"
 
     # ── Embeddings ────────────────────────────────────────────
     EMBEDDING_MODEL_ID: str = "BAAI/bge-small-en-v1.5"

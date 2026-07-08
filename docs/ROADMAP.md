@@ -13,10 +13,15 @@ contract. No application code. Self-review complete.
 - ✅ Chat CRUD with **per-chat isolation** (app guard + Postgres RLS, verified with a genuine
   cross-user bypass-attempt test + repo invariant, ADR-0013) — backend (create/list/get/rename/
   pin/archive/delete) + frontend (chat list with search/filter, chat detail, dashboard preview).
-- Single-provider chat (Gemini free / Ollama) with **SSE streaming** from the backend.
-- PDF upload → parse → chunk → embed → **in-chat** semantic search.
-- Minimal dashboard (auth landing page + recent-chats preview in place; message UI follows with
-  the next feature).
+- ✅ Single-provider chat (Gemini + Ollama, ADR-0006 registry) with **SSE streaming** direct from
+  the backend (ADR-0007), bridged from the httpOnly-cookie session via a short-lived stream ticket
+  (ADR-0016) — backend (fast-path/RAG-grounded orchestrator slice) + frontend (message thread,
+  streaming composer).
+- ✅ PDF upload → parse → chunk → embed → **in-chat** semantic search — backend (ARQ ingestion
+  pipeline: validate/extract/chunk/embed/index; pgvector HNSW search filtered by `chat_id` +
+  `model_id`, ADR-0008/0015) + frontend (upload with live per-stage progress, document list).
+- ✅ Minimal dashboard (auth landing page + recent-chats preview; message UI now live on the chat
+  detail page).
 - Core tests + CI green; Alembic baseline + models↔migrations sync check.
 
 ## Month 1 — Provider layer & orchestration

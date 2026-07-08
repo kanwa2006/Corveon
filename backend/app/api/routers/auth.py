@@ -14,6 +14,7 @@ from app.api.schemas.auth import (
     LogoutRequest,
     RefreshRequest,
     RegisterRequest,
+    StreamTicketResponse,
     TokenResponse,
     UserPublic,
 )
@@ -23,6 +24,7 @@ from app.core.security import (
     TokenType,
     create_access_token,
     create_refresh_token,
+    create_stream_ticket,
     decode_token,
     hash_password,
     verify_password,
@@ -36,6 +38,18 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.get("/me", response_model=UserPublic)
 async def me(current_user: CurrentUserDep) -> UserPublic:
     return UserPublic.model_validate(current_user)
+
+
+@router.post("/stream-ticket", response_model=StreamTicketResponse)
+async def stream_ticket(
+    current_user: CurrentUserDep, settings: SettingsDep
+) -> StreamTicketResponse:
+    """Mints a very-short-lived, single-purpose credential the browser can
+    pass as a query parameter to open an SSE connection directly against the
+    backend (ADR-0007) — resolves the bridge ADR-0012 deferred to this
+    feature, since native EventSource cannot attach the httpOnly session
+    cookie or a custom Authorization header cross-origin."""
+    return StreamTicketResponse(ticket=create_stream_ticket(str(current_user.id), settings))
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserPublic)

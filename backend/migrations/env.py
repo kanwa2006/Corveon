@@ -21,6 +21,20 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Indexes created via raw DDL rather than a tracked model Index (ADR-0015)
+# are, by definition, absent from target_metadata — without this filter,
+# autogenerate would see them as "extra" objects in the live database and
+# propose dropping them on every single run. include_object tells it to
+# simply not compare these objects in either direction.
+_AUTOGENERATE_IGNORED_OBJECT_NAMES = {"ix_chunk_embeddings_embedding_hnsw"}
+
+
+def include_object(
+    object: object, name: str | None, type_: str, reflected: bool, compare_to: object
+) -> bool:
+    del object, reflected, compare_to  # part of Alembic's required hook signature
+    return not (type_ == "index" and name in _AUTOGENERATE_IGNORED_OBJECT_NAMES)
+
 
 def get_url() -> str:
     return get_settings().DATABASE_URL
@@ -34,6 +48,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         compare_server_default=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -45,6 +60,7 @@ def do_run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         compare_type=True,
         compare_server_default=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()

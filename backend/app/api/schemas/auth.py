@@ -37,6 +37,10 @@ class AccessTokenResponse(BaseModel):
     access: str
 
 
+class StreamTicketResponse(BaseModel):
+    ticket: str
+
+
 class UserPublic(BaseModel):
     id: uuid.UUID
     email: str

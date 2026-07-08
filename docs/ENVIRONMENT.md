@@ -44,6 +44,7 @@ come from the environment only — never code, never the database.
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | credentials |
 | `R2_BUCKET` / `R2_ENDPOINT` | bucket + S3-compatible endpoint |
 | `R2_SIGNED_URL_TTL_SECONDS` | short-lived signed link TTL (default `300`) |
+| `LOCAL_STORAGE_DIR` | default `.data/documents`; dev/test fallback when R2 is unconfigured (ADR-0014); gitignored |
 
 ## Embeddings
 | Var | Default | Meaning |

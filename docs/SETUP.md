@@ -41,6 +41,15 @@ alembic upgrade head                 # applies the baseline organizations/users 
 ruff check . && mypy app && pytest   # quality gates
 uvicorn app.main:app --reload        # http://localhost:8000 (docs at /docs, health at /health)
 ```
+Document uploads need the ARQ ingestion worker running too (a separate persistent process, same
+as production — ADR-0011), in another terminal:
+```bash
+arq app.workers.main.WorkerSettings
+```
+First use of search/documents/messages loads the local embedding model (`EMBEDDING_MODEL_ID`,
+default `BAAI/bge-small-en-v1.5`, ~130 MB) from the Hugging Face cache, downloading it once if not
+already cached — this happens lazily, not at startup, so unrelated endpoints/tests never pay this
+cost (see `app/ingestion/embeddings.py`).
 
 ## 4. Frontend
 ```bash
@@ -63,6 +72,8 @@ ollama pull llama3.1                 # or any model set in OLLAMA_DEFAULT_MODEL
 - `GET http://localhost:8000/health` → liveness. `GET http://localhost:8000/ready` → DB + Redis checks.
 - `docker compose ... logs -f postgres` → confirm pgvector extension is available.
 - If a provider is unset, that is fine — the platform runs in local/degraded mode by design.
+- Uploaded documents land on local disk (`backend/.data/documents`, gitignored) unless all four
+  `R2_*` variables are set — a disclosed dev/test fallback, not a stub (ADR-0014).
 
 ## Troubleshooting
 See [DEBUGGING.md](DEBUGGING.md). First checks: the `trace_id` in logs, provider health at

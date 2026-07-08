@@ -72,7 +72,10 @@ async def _clean_tables(app) -> AsyncIterator[None]:  # type: ignore[no-untyped-
     yield
     async for session in app.state.db.session():
         await session.execute(
-            text("TRUNCATE TABLE chats, users, organizations RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE TABLE jobs, chunk_embeddings, document_chunks, documents, "
+                "messages, chats, users, organizations RESTART IDENTITY CASCADE"
+            )
         )
         await session.commit()
         break

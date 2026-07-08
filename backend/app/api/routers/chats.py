@@ -13,23 +13,13 @@ import uuid
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUserDep, RlsDbDep
+from app.api.routers._common import get_owned_chat_or_404
 from app.api.schemas.chat import ChatCreateRequest, ChatPublic, ChatUpdateRequest
-from app.core.errors import NotFoundError
-from app.data.models.chat import Chat
 from app.data.repositories.chat_repository import ChatRepository
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
 _DEFAULT_TITLE = "New chat"
-
-
-async def _get_owned_chat_or_404(
-    repo: ChatRepository, chat_id: uuid.UUID, user_id: uuid.UUID
-) -> Chat:
-    chat = await repo.get_by_id_for_user(chat_id, user_id)
-    if chat is None:
-        raise NotFoundError("Chat not found.")
-    return chat
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ChatPublic)
@@ -64,7 +54,7 @@ async def list_chats(
 @router.get("/{chat_id}", response_model=ChatPublic)
 async def get_chat(chat_id: uuid.UUID, db: RlsDbDep, current_user: CurrentUserDep) -> ChatPublic:
     repo = ChatRepository(db)
-    chat = await _get_owned_chat_or_404(repo, chat_id, current_user.id)
+    chat = await get_owned_chat_or_404(repo, chat_id, current_user.id)
     return ChatPublic.model_validate(chat)
 
 
@@ -76,7 +66,7 @@ async def update_chat(
     current_user: CurrentUserDep,
 ) -> ChatPublic:
     repo = ChatRepository(db)
-    chat = await _get_owned_chat_or_404(repo, chat_id, current_user.id)
+    chat = await get_owned_chat_or_404(repo, chat_id, current_user.id)
     chat = await repo.update(
         chat,
         title=payload.title,
@@ -94,6 +84,6 @@ async def delete_chat(chat_id: uuid.UUID, db: RlsDbDep, current_user: CurrentUse
     # objects) to cascade to — none of that exists yet at this point in the
     # roadmap, so there is nothing for an async job to do beyond this.
     repo = ChatRepository(db)
-    chat = await _get_owned_chat_or_404(repo, chat_id, current_user.id)
+    chat = await get_owned_chat_or_404(repo, chat_id, current_user.id)
     await repo.delete(chat)
     await db.commit()

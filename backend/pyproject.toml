@@ -96,6 +96,11 @@ ignore = []
 # arguments whose *names* just happen to match the keyword list — not a real
 # secret in any of these cases.
 "tests/**" = ["S101", "S105", "S106", "S107"]
+# S608 (SQL-injection-shaped f-string) false-positives here: `table` is always
+# one of the fixed literals in _TABLES_WITH_CHAT_ID_RLS, never external input.
+# A trailing `# noqa` cannot be placed on the line ruff reports without
+# corrupting the multi-line triple-quoted SQL literal itself.
+"migrations/versions/0003_messages_documents_chunks_jobs_with_rls.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -105,6 +110,12 @@ warn_unused_ignores = true
 disallow_untyped_defs = true
 namespace_packages = true
 mypy_path = "."
+
+[[tool.mypy.overrides]]
+# Neither ships inline types (py.typed) or a stub package we depend on;
+# third-party, not our code to annotate.
+module = ["fitz", "fitz.*", "boto3", "boto3.*", "botocore", "botocore.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

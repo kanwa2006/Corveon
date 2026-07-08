@@ -22,6 +22,17 @@ from app.core.config import Settings
 class TokenType(StrEnum):
     ACCESS = "access"
     REFRESH = "refresh"
+    STREAM = "stream"
+
+
+# The browser must connect directly to the backend for SSE (ADR-0007) —
+# native EventSource cannot attach the httpOnly session cookie or a custom
+# Authorization header cross-origin. A stream ticket is a purpose-built,
+# very-short-lived credential minted (over the normal cookie-authenticated
+# path) specifically to open one streaming connection — resolves the bridge
+# ADR-0012 deferred to this feature. Query-string exposure risk is bounded by
+# the short TTL, unlike the real access token.
+STREAM_TICKET_TTL_SECONDS = 60
 
 
 class InvalidTokenError(Exception):
@@ -84,6 +95,15 @@ def create_refresh_token(user_id: str, settings: Settings) -> str:
         subject=user_id,
         token_type=TokenType.REFRESH,
         ttl_seconds=settings.JWT_REFRESH_TTL_SECONDS,
+        settings=settings,
+    )
+
+
+def create_stream_ticket(user_id: str, settings: Settings) -> str:
+    return _encode(
+        subject=user_id,
+        token_type=TokenType.STREAM,
+        ttl_seconds=STREAM_TICKET_TTL_SECONDS,
         settings=settings,
     )
 

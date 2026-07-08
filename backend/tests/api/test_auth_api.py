@@ -159,3 +159,61 @@ async def test_ready_endpoint_reports_healthy(client: AsyncClient) -> None:
     assert body["status"] == "ok"
     assert body["checks"]["database"] == "ok"
     assert body["checks"]["redis"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_stream_ticket_requires_authentication(client: AsyncClient) -> None:
+    response = await client.post("/api/v1/auth/stream-ticket")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_stream_ticket_mints_a_usable_short_lived_credential(client: AsyncClient) -> None:
+    """The stream ticket (ADR-0016) authenticates the two direct-to-backend
+    SSE endpoints via ?ticket=, bridging the httpOnly-cookie session
+    (ADR-0012) to a connection EventSource/fetch can't attach a header to."""
+    await _register(client)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "alice@example.com", "password": "correcthorsebattery"},
+    )
+    access_headers = {"Authorization": f"Bearer {login.json()['access']}"}
+
+    ticket_response = await client.post("/api/v1/auth/stream-ticket", headers=access_headers)
+    assert ticket_response.status_code == 200
+    ticket = ticket_response.json()["ticket"]
+    assert ticket
+
+    # Authenticates via ?ticket= alone — no Authorization header at all.
+    response = await client.get(
+        f"/api/v1/jobs/00000000-0000-0000-0000-000000000000/events?ticket={ticket}"
+    )
+    # 404 (job doesn't exist) proves the ticket authenticated successfully —
+    # an auth failure would be 401, not 404.
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stream_ticket_is_rejected_as_a_normal_bearer_token(client: AsyncClient) -> None:
+    """A stream ticket must not work as a substitute for a real access token
+    on ordinary endpoints — it is type-tagged (TokenType.STREAM) precisely so
+    decode_token's type check rejects it everywhere except via ?ticket= on
+    the two streaming endpoints (ADR-0016)."""
+    await _register(client)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "alice@example.com", "password": "correcthorsebattery"},
+    )
+    access_headers = {"Authorization": f"Bearer {login.json()['access']}"}
+    ticket = (await client.post("/api/v1/auth/stream-ticket", headers=access_headers)).json()[
+        "ticket"
+    ]
+
+    response = await client.get("/api/v1/chats", headers={"Authorization": f"Bearer {ticket}"})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_job_events_rejects_missing_ticket_and_missing_header(client: AsyncClient) -> None:
+    response = await client.get("/api/v1/jobs/00000000-0000-0000-0000-000000000000/events")
+    assert response.status_code == 401

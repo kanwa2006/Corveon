@@ -57,6 +57,10 @@ jobs:
         run: |
           psql -h localhost -U postgres -d postgres -c "CREATE ROLE corveon WITH LOGIN PASSWORD 'corveon';"
           psql -h localhost -U postgres -d postgres -c "CREATE DATABASE corveon_test OWNER corveon;"
+          # pgvector requires superuser to CREATE EXTENSION; corveon (non-
+          # superuser) cannot do this itself (same reasoning as the role
+          # creation above) — done once here before migrations ever run.
+          psql -h localhost -U postgres -d corveon_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
       - name: Install
         run: pip install -e ".[dev]"
       - name: Lint (ruff)
