@@ -25,7 +25,11 @@ cp .env.example .env
 docker compose -f infra/docker-compose.yml up -d   # postgres(pgvector), redis, ollama
 docker compose -f infra/docker-compose.yml ps
 ```
-Postgres is exposed on `5432`, Redis on `6379`, Ollama on `11434` (see the compose file).
+Postgres is exposed on `5432`, Redis on `6379`, Ollama on `11434` (see the compose file). On first
+boot, an init script creates the `corveon` role/database as a non-superuser owner — required for
+Row-Level Security to actually apply (ADR-0013). Init scripts only run on a **fresh** data volume:
+if you have a pre-existing local Postgres volume from before this changed, run
+`docker compose -f infra/docker-compose.yml down -v` once before `up -d` to let it re-initialize.
 
 ## 3. Backend
 ```bash

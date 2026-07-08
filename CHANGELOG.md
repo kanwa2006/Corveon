@@ -35,6 +35,27 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
 - [ADR-0012](docs/adr/0012-frontend-auth-cookie-bff-proxy.md): httpOnly-cookie BFF proxy for
   frontend auth; explicitly defers the SSE-authorization bridge to the Chat feature (interacts
   with ADR-0007).
+- **Chat CRUD with per-chat isolation** (Roadmap Week 1): create/list/get/rename/pin/archive/
+  delete, with search and pinned/archived filtering. Isolation is triple-enforced — the repository
+  layer, and genuine Postgres Row-Level Security verified with a dedicated cross-user bypass-
+  attempt test (not just an app-layer check) — see [ADR-0013](docs/adr/0013-postgres-rls-requires-nonsuperuser-app-role.md).
+- Frontend: a searchable/filterable chat list, a chat detail page (inline rename, pin/archive/
+  delete, an honest "messaging is coming soon" empty state), and a dashboard recent-chats preview,
+  all proxied through the same Next.js Route Handler / httpOnly-cookie pattern as auth (ADR-0012).
+  Distinctive editorial typography (Fraunces display font) and Framer Motion list transitions.
+- Tests: backend api/database/security suites for chats, including a raw-SQL RLS enforcement test
+  independent of application code; frontend unit tests (22 passing) and Playwright e2e/a11y specs.
+  A genuine query-cache bug was found via live browser testing and fixed with a dedicated
+  regression test — see "Fixed" below.
+
+### Fixed
+- `useUpdateChat`'s optimistic-update cache write matched query keys by the bare `['chats']`
+  prefix, which also matched the single-object chat-detail cache entry; calling `.map()` on that
+  non-array entry threw inside `onMutate`, silently aborting every rename/pin/archive mutation
+  before it ever reached the network (no console error, no visible failure — just no-op). Caught
+  via live browser testing, not by the initial unit tests. Fixed by scoping the array-shaped
+  cache write to a dedicated `['chats','list']` key, and added a regression test that seeds both
+  cache shapes simultaneously.
 
 ## [0.0.0] — 2026-07-07
 

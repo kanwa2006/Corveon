@@ -13,6 +13,10 @@
 secrets/
 credentials.json
 
+# Local dev-tool launch config — commonly contains machine-specific absolute
+# paths (e.g. a local venv location), not portable across machines/CI.
+.claude/launch.json
+
 # ─── Python / backend ───────────────────────────────────────────────────
 __pycache__/
 *.py[cod]

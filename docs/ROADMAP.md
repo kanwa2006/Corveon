@@ -10,10 +10,13 @@ contract. No application code. Self-review complete.
 ## Week 1 — MVP core
 - ✅ Auth + users (OAuth2/JWT, Argon2, RBAC) — backend (register/login/refresh/logout/me) +
   frontend (login/register, httpOnly-cookie session via BFF proxy, ADR-0012).
-- Chat CRUD with **per-chat isolation** (app guard + RLS + repo invariant).
+- ✅ Chat CRUD with **per-chat isolation** (app guard + Postgres RLS, verified with a genuine
+  cross-user bypass-attempt test + repo invariant, ADR-0013) — backend (create/list/get/rename/
+  pin/archive/delete) + frontend (chat list with search/filter, chat detail, dashboard preview).
 - Single-provider chat (Gemini free / Ollama) with **SSE streaming** from the backend.
 - PDF upload → parse → chunk → embed → **in-chat** semantic search.
-- Minimal dashboard (auth landing page in place; chat UI follows with the Chat feature).
+- Minimal dashboard (auth landing page + recent-chats preview in place; message UI follows with
+  the next feature).
 - Core tests + CI green; Alembic baseline + models↔migrations sync check.
 
 ## Month 1 — Provider layer & orchestration

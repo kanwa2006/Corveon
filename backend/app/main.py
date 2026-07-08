@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import auth as auth_router
+from app.api.routers import chats as chats_router
 from app.api.routers import health as health_router
 from app.core.config import get_settings
 from app.core.errors import (
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router.router)
     app.include_router(auth_router.router, prefix="/api/v1")
+    app.include_router(chats_router.router, prefix="/api/v1")
 
     if settings.PROMETHEUS_METRICS_ENABLED:
         mount_metrics(app)

@@ -4,7 +4,7 @@ DATABASE_URL/REDIS_URL (CI services, or `docker compose up -d` locally)."""
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 
 import pytest
@@ -17,6 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_PASSWORD = "correcthorsebattery"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -47,10 +48,31 @@ async def client(app) -> AsyncIterator[AsyncClient]:  # type: ignore[no-untyped-
         yield ac
 
 
+@pytest_asyncio.fixture
+async def auth_headers(
+    client: AsyncClient,
+) -> Callable[[str], Awaitable[dict[str, str]]]:
+    """Registers + logs in a fresh user, returning an Authorization header dict."""
+
+    async def _make(email: str) -> dict[str, str]:
+        await client.post(
+            "/api/v1/auth/register", json={"email": email, "password": DEFAULT_PASSWORD}
+        )
+        response = await client.post(
+            "/api/v1/auth/login", json={"email": email, "password": DEFAULT_PASSWORD}
+        )
+        token = response.json()["access"]
+        return {"Authorization": f"Bearer {token}"}
+
+    return _make
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def _clean_tables(app) -> AsyncIterator[None]:  # type: ignore[no-untyped-def]
     yield
     async for session in app.state.db.session():
-        await session.execute(text("TRUNCATE TABLE users, organizations RESTART IDENTITY CASCADE"))
+        await session.execute(
+            text("TRUNCATE TABLE chats, users, organizations RESTART IDENTITY CASCADE")
+        )
         await session.commit()
         break
