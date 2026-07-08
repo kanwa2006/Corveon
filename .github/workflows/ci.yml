@@ -104,8 +104,12 @@ jobs:
       # The first frontend PR commits pnpm-lock.yaml, enabling --frozen-lockfile below.
       - name: Detect Next app
         id: detect
+        # working-directory (frontend) already applies to this step — these
+        # paths are relative to it, not repo root (a doubled frontend/frontend/
+        # prefix here previously made this check always false, silently
+        # skipping every frontend gate below despite the job showing green).
         run: |
-          if [ -f frontend/next.config.mjs ] || [ -f frontend/next.config.js ] || [ -f frontend/app/layout.tsx ]; then
+          if [ -f next.config.mjs ] || [ -f next.config.js ] || [ -f app/layout.tsx ]; then
             echo "has_app=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_app=false" >> "$GITHUB_OUTPUT"

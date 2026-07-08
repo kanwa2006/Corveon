@@ -187,6 +187,21 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
   reproducible latency numbers); run it locally for real throughput/latency figures.
 
 ### Fixed
+- The `frontend` CI job's "Detect Next app" step checked for `frontend/next.config.mjs` etc., but
+  that job's `defaults.run.working-directory` is already `frontend` — the doubled
+  `frontend/frontend/...` path never existed, so `has_app` was always `false` and every frontend
+  gate (lint, typecheck, Vitest, build) had been silently skipped since the Next app scaffold
+  landed, with the job still showing green. Found while investigating why the frontend job
+  consistently finished in ~5s. Fixed by making the paths relative to the step's actual working
+  directory.
+- `EmptyState` hardcoded `<h3>` for its title, which is only correct one specific place it's used
+  (nested under the dashboard's "Recent chats" `CardTitle`, itself an `<h2>`) — everywhere else
+  (the chats list page, both empty states on the chat detail page) it sits directly under the
+  page's own `<h1>` with no `<h2>` between, an axe `heading-order` violation. Flagged as a known
+  pre-existing issue in this PR's original description but left unfixed because axe wasn't wired
+  into CI yet; surfaced as a real CI failure once Phase 7 actually ran it on every PR. Fixed by
+  giving `EmptyState` an `as` prop (same pattern as `CardTitle`) defaulting to `h2`, with the
+  dashboard usage passing `as="h3"` explicitly.
 - `validation_error_handler` (`app/core/errors.py`) could itself raise while building a 422
   response: Pydantic v2's `ValidationError.errors()` embeds the raw exception instance in
   `ctx["error"]` for certain validators (here, FastAPI's own `UploadFile`-vs-plain-field type
