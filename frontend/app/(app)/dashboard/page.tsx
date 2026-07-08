@@ -54,6 +54,7 @@ export default function DashboardPage(): React.JSX.Element {
             </ul>
           ) : (
             <EmptyState
+              as="h3"
               icon={MessageSquare}
               title="Start your first chat"
               description="Ask a question, upload a document, or explore a clinical topic — every answer comes with transparent, sourced evidence."
