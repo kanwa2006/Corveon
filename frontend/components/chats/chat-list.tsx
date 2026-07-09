@@ -24,10 +24,9 @@ function ChatListSkeleton(): React.JSX.Element {
 
 interface ChatListProps {
   filters: ChatListFilters;
-  onCreateChat: () => void;
 }
 
-export function ChatList({ filters, onCreateChat }: ChatListProps): React.JSX.Element {
+export function ChatList({ filters }: ChatListProps): React.JSX.Element {
   const { data: chats, isLoading, isError, refetch } = useChats(filters);
 
   if (isLoading) {
@@ -72,8 +71,10 @@ export function ChatList({ filters, onCreateChat }: ChatListProps): React.JSX.El
       <EmptyState
         icon={MessageSquare}
         title="Start your first chat"
+        // No action button here — the persistent "New chat" button in the page
+        // header already offers this exact action; showing it twice on screen
+        // was redundant and gave two controls the same accessible name.
         description="Ask a question, upload a document, or explore a clinical topic — every answer comes with transparent, sourced evidence."
-        action={<Button onClick={onCreateChat}>New chat</Button>}
       />
     );
   }

@@ -15,3 +15,10 @@
 
 CREATE ROLE corveon WITH LOGIN PASSWORD 'corveon';
 CREATE DATABASE corveon OWNER corveon;
+
+-- pgvector requires superuser to CREATE EXTENSION; "corveon" (non-superuser,
+-- ADR-0013) cannot do this itself, so it happens once here at bootstrap,
+-- same reasoning as role/database creation above. Migration 0003 assumes the
+-- extension already exists rather than attempting to create it itself.
+\c corveon
+CREATE EXTENSION IF NOT EXISTS vector;

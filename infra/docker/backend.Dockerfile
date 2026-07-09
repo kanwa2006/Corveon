@@ -1,7 +1,7 @@
 # Corveon backend — multi-stage production image.
 # The SAME image runs the API and the ARQ worker via different commands (§17):
 #   API    : gunicorn app.main:app -k uvicorn.workers.UvicornWorker
-#   Worker : arq app.workers.WorkerSettings
+#   Worker : arq app.workers.main.WorkerSettings
 # Build context is the repository root: docker build -f infra/docker/backend.Dockerfile .
 
 # ── Builder ───────────────────────────────────────────────────────────────

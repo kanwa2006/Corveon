@@ -21,6 +21,7 @@ schema and kept honest by contract tests (schemathesis).
 | POST | `/auth/refresh` | `200 {access}` |
 | POST | `/auth/logout` | `204` |
 | GET | `/auth/me` | `200 {user}` — added during Week 1 implementation: the frontend needs a way to fetch the authenticated user's profile, which `/login` (tokens only) doesn't provide. Requires a valid bearer access token. |
+| POST | `/auth/stream-ticket` | `200 {ticket}` — added during Week 1 (ADR-0016): a 60-second single-purpose credential the browser passes as `?ticket=` to open the two SSE endpoints below directly against the backend (ADR-0007), since the httpOnly session cookie can't cross origins and `EventSource` can't attach a custom header. Requires a valid bearer access token to mint. |
 
 ## Chats
 | Method | Path | Result |
@@ -34,24 +35,27 @@ schema and kept honest by contract tests (schemathesis).
 ## Messages / AI (SSE streaming)
 | Method | Path | Result |
 |---|---|---|
-| POST | `/chats/{id}/messages` | `202` + SSE (tokens + `routing_trace`) |
-| POST | `/chats/{id}/messages/{mid}/regenerate` | `202` + SSE |
-| POST | `/chats/{id}/messages/{mid}/continue` | `202` + SSE |
+| POST | `/chats/{id}/messages` | `202` + SSE — `token` events (text deltas), a final `done` event (`{message_id, routing_trace}`), or an `error` event (`provider_unavailable`, degraded mode, ADR-0006). Implemented Week 1: the browser connects directly with a stream ticket (`?ticket=`, ADR-0016), not the session cookie. |
+| POST | `/chats/{id}/messages/{mid}/regenerate` | `202` + SSE — planned (Month 1+), not yet implemented |
+| POST | `/chats/{id}/messages/{mid}/continue` | `202` + SSE — planned (Month 1+), not yet implemented |
 | GET | `/chats/{id}/messages` | `200 [message]` |
 
 ## Documents / uploads
+Implemented Week 1. PDF only (extension + MIME + magic-byte checked); parsing/chunking/embedding
+runs in the ARQ ingestion worker (`app/workers/tasks.py`), never inline in the request.
 | Method | Path | Result |
 |---|---|---|
 | POST | `/chats/{id}/documents` (multipart) | `202 {job_id}` |
-| GET | `/jobs/{job_id}` | `200 {status, progress_stage}` |
-| GET | `/jobs/{job_id}/events` | SSE stage progress |
+| GET | `/jobs/{job_id}` | `200 {status, progress_stage, error}` |
+| GET | `/jobs/{job_id}/events` | SSE `stage` events (each carrying the current `JobPublic`); browser connects directly with a stream ticket (ADR-0016), same as messages |
 | GET | `/chats/{id}/documents` | `200 [document]` |
-| DELETE | `/documents/{id}` | `204` |
+| DELETE | `/documents/{id}` | `204` — rejects with `409` while the document is mid-ingestion (`status: processing`) to avoid racing the worker's own writes |
 
 ## Search
+Implemented Week 1.
 | Method | Path | Result |
 |---|---|---|
-| POST | `/chats/{id}/search` | `200 [hit]` — semantic, **in-chat only** |
+| POST | `/chats/{id}/search` | `200 [hit]` — semantic, **in-chat only**; filters by both `chat_id` and embedding `model_id` (ADR-0008) |
 
 ## Evidence & medication
 | Method | Path | Result |

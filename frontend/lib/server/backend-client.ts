@@ -17,9 +17,15 @@ export const BACKEND_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 async function rawFetch(path: string, init: RequestInit): Promise<Response> {
+  // A FormData body (document upload) needs the browser/runtime to set its
+  // own multipart Content-Type with the correct boundary — forcing JSON here
+  // would silently corrupt the request instead of erroring loudly.
+  const isFormData = init.body instanceof FormData;
   return fetch(`${BACKEND_BASE_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
+    headers: isFormData
+      ? { ...init.headers }
+      : { 'Content-Type': 'application/json', ...init.headers },
     cache: 'no-store',
   });
 }

@@ -23,9 +23,20 @@ export const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivEleme
 );
 CardHeader.displayName = 'CardHeader';
 
-export const CardTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(
-  ({ className, ...props }, ref) => (
-    <h2 ref={ref} className={cn('text-xl font-semibold tracking-tight', className)} {...props} />
+interface CardTitleProps extends HTMLAttributes<HTMLHeadingElement> {
+  // Defaults to h2 (a Card is usually a subsection of a page that already
+  // has its own h1) — pages where the CardTitle IS the page's only heading
+  // (e.g. the login/register forms) should pass as="h1".
+  as?: 'h1' | 'h2' | 'h3';
+}
+
+export const CardTitle = forwardRef<HTMLHeadingElement, CardTitleProps>(
+  ({ className, as: Heading = 'h2', ...props }, ref) => (
+    <Heading
+      ref={ref}
+      className={cn('text-xl font-semibold tracking-tight', className)}
+      {...props}
+    />
   ),
 );
 CardTitle.displayName = 'CardTitle';

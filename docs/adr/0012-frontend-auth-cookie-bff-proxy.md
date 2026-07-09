@@ -33,6 +33,7 @@ model in full:
   a short-lived signed "stream ticket" minted by a Route Handler and passed as an `EventSource`
   query parameter, or holding the access token in memory (not persisted) so the browser can send
   it directly. Revisit this ADR (or add a superseding one) when that feature starts.
+  **Resolved in [ADR-0016](0016-sse-stream-ticket-bridge.md):** the stream-ticket candidate.
 
 ## Consequences
 - Tokens never touch `localStorage` or JS-readable storage — meaningfully reduces XSS blast

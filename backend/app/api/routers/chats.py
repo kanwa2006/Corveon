@@ -10,26 +10,18 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 
-from app.api.deps import CurrentUserDep, RlsDbDep
+from app.api.deps import ArqDep, CurrentUserDep, RlsDbDep
+from app.api.routers._common import get_owned_chat_or_404
 from app.api.schemas.chat import ChatCreateRequest, ChatPublic, ChatUpdateRequest
-from app.core.errors import NotFoundError
-from app.data.models.chat import Chat
+from app.data.repositories.audit_log_repository import AuditLogRepository
 from app.data.repositories.chat_repository import ChatRepository
+from app.data.repositories.document_repository import DocumentRepository
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
 _DEFAULT_TITLE = "New chat"
-
-
-async def _get_owned_chat_or_404(
-    repo: ChatRepository, chat_id: uuid.UUID, user_id: uuid.UUID
-) -> Chat:
-    chat = await repo.get_by_id_for_user(chat_id, user_id)
-    if chat is None:
-        raise NotFoundError("Chat not found.")
-    return chat
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ChatPublic)
@@ -64,7 +56,7 @@ async def list_chats(
 @router.get("/{chat_id}", response_model=ChatPublic)
 async def get_chat(chat_id: uuid.UUID, db: RlsDbDep, current_user: CurrentUserDep) -> ChatPublic:
     repo = ChatRepository(db)
-    chat = await _get_owned_chat_or_404(repo, chat_id, current_user.id)
+    chat = await get_owned_chat_or_404(repo, chat_id, current_user.id)
     return ChatPublic.model_validate(chat)
 
 
@@ -76,7 +68,7 @@ async def update_chat(
     current_user: CurrentUserDep,
 ) -> ChatPublic:
     repo = ChatRepository(db)
-    chat = await _get_owned_chat_or_404(repo, chat_id, current_user.id)
+    chat = await get_owned_chat_or_404(repo, chat_id, current_user.id)
     chat = await repo.update(
         chat,
         title=payload.title,
@@ -88,12 +80,36 @@ async def update_chat(
 
 
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_chat(chat_id: uuid.UUID, db: RlsDbDep, current_user: CurrentUserDep) -> None:
-    # Hard-deletes the chat row directly. §23.6's ARQ-cascade delete job
-    # applies once there is content (messages, documents, embeddings, R2
-    # objects) to cascade to — none of that exists yet at this point in the
-    # roadmap, so there is nothing for an async job to do beyond this.
+async def delete_chat(
+    chat_id: uuid.UUID,
+    request: Request,
+    db: RlsDbDep,
+    current_user: CurrentUserDep,
+    arq: ArqDep,
+) -> None:
+    # Hard-deletes the chat row (messages/documents/document_chunks/
+    # chunk_embeddings cascade at the DB level via ON DELETE CASCADE). The
+    # corresponding object-storage blobs don't live in Postgres, so they
+    # can't cascade with the row delete — collect their keys first and clean
+    # them up in a fire-and-forget ARQ job after the chat is gone (CORVEON
+    # blueprint §23.6), rather than blocking this request on N storage
+    # deletes. One audit-log entry records the action, not the content.
     repo = ChatRepository(db)
-    chat = await _get_owned_chat_or_404(repo, chat_id, current_user.id)
+    chat = await get_owned_chat_or_404(repo, chat_id, current_user.id)
+
+    documents = await DocumentRepository(db).list_for_chat(chat_id)
+    storage_keys = [document.storage_key for document in documents]
+
+    await AuditLogRepository(db).create(
+        actor_id=current_user.id,
+        action="chat.delete",
+        entity_type="chat",
+        entity_id=chat.id,
+        ip=request.client.host if request.client else None,
+        metadata={"document_count": len(storage_keys)},
+    )
     await repo.delete(chat)
     await db.commit()
+
+    if storage_keys:
+        await arq.enqueue_job("delete_storage_objects", storage_keys=storage_keys)

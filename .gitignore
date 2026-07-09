@@ -31,6 +31,7 @@ wheels/
 *.spec
 .venv/
 venv/
+.venv*/
 env/
 .python-version
 .mypy_cache/
@@ -38,6 +39,7 @@ env/
 .ruff_cache/
 .pytest_cache/
 .hypothesis/
+.schemathesis/
 .coverage
 .coverage.*
 coverage.xml
@@ -86,6 +88,9 @@ ollama-data/
 docker-compose.override.yml
 *.log
 logs/
+
+# ─── Local object-storage fallback (ADR-0014) ───────────────────────────
+backend/.data/
 
 # ─── Editors / IDEs ─────────────────────────────────────────────────────
 .idea/

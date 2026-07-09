@@ -2,9 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Requires the backend (FastAPI + Postgres + Redis) reachable at
- * NEXT_PUBLIC_API_BASE_URL, and starts the frontend dev server itself.
- * Not yet wired into CI — full-stack orchestration (backend + DB + Redis +
- * frontend together) is a separate, larger infra task tracked for follow-up.
+ * NEXT_PUBLIC_API_BASE_URL. Wired into CI as the `e2e` job in
+ * .github/workflows/ci.yml, which starts Postgres+Redis services, the
+ * FastAPI backend, and the ARQ worker before this config's own `webServer`
+ * builds and starts the frontend.
  */
 export default defineConfig({
   testDir: './tests',

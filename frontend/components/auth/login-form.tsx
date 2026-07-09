@@ -35,7 +35,7 @@ export function LoginForm(): React.JSX.Element {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Sign in to Corveon</CardTitle>
+        <CardTitle as="h1">Sign in to Corveon</CardTitle>
         <CardDescription>
           Evidence-grounded clinical intelligence, one workspace at a time.
         </CardDescription>

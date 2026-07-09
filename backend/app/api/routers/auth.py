@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 
 from app.api.deps import CurrentUserDep, DbDep, RedisDep, SettingsDep
 from app.api.schemas.auth import (
@@ -14,6 +14,7 @@ from app.api.schemas.auth import (
     LogoutRequest,
     RefreshRequest,
     RegisterRequest,
+    StreamTicketResponse,
     TokenResponse,
     UserPublic,
 )
@@ -23,14 +24,20 @@ from app.core.security import (
     TokenType,
     create_access_token,
     create_refresh_token,
+    create_stream_ticket,
     decode_token,
     hash_password,
     verify_password,
 )
 from app.core.token_denylist import is_revoked, revoke
+from app.data.repositories.audit_log_repository import AuditLogRepository
 from app.data.repositories.user_repository import UserRepository
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 
 @router.get("/me", response_model=UserPublic)
@@ -38,8 +45,22 @@ async def me(current_user: CurrentUserDep) -> UserPublic:
     return UserPublic.model_validate(current_user)
 
 
+@router.post("/stream-ticket", response_model=StreamTicketResponse)
+async def stream_ticket(
+    current_user: CurrentUserDep, settings: SettingsDep
+) -> StreamTicketResponse:
+    """Mints a very-short-lived, single-purpose credential the browser can
+    pass as a query parameter to open an SSE connection directly against the
+    backend (ADR-0007) — resolves the bridge ADR-0012 deferred to this
+    feature, since native EventSource cannot attach the httpOnly session
+    cookie or a custom Authorization header cross-origin."""
+    return StreamTicketResponse(ticket=create_stream_ticket(str(current_user.id), settings))
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserPublic)
-async def register(payload: RegisterRequest, db: DbDep, settings: SettingsDep) -> UserPublic:
+async def register(
+    payload: RegisterRequest, request: Request, db: DbDep, settings: SettingsDep
+) -> UserPublic:
     repo = UserRepository(db)
     if await repo.get_by_email(payload.email) is not None:
         raise ConflictError("An account with this email already exists.")
@@ -48,12 +69,21 @@ async def register(payload: RegisterRequest, db: DbDep, settings: SettingsDep) -
         email=payload.email,
         password_hash=hash_password(payload.password, settings),
     )
+    await AuditLogRepository(db).create(
+        actor_id=user.id,
+        action="user.register",
+        entity_type="user",
+        entity_id=user.id,
+        ip=_client_ip(request),
+    )
     await db.commit()
     return UserPublic.model_validate(user)
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, db: DbDep, settings: SettingsDep) -> TokenResponse:
+async def login(
+    payload: LoginRequest, request: Request, db: DbDep, settings: SettingsDep
+) -> TokenResponse:
     repo = UserRepository(db)
     user = await repo.get_by_email(payload.email)
     if (
@@ -62,6 +92,15 @@ async def login(payload: LoginRequest, db: DbDep, settings: SettingsDep) -> Toke
         or not verify_password(payload.password, user.password_hash, settings)
     ):
         raise UnauthorizedError("Incorrect email or password.")
+
+    await AuditLogRepository(db).create(
+        actor_id=user.id,
+        action="user.login",
+        entity_type="user",
+        entity_id=user.id,
+        ip=_client_ip(request),
+    )
+    await db.commit()
 
     return TokenResponse(
         access=create_access_token(str(user.id), settings, role=user.role.value),
@@ -99,10 +138,21 @@ async def refresh(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     payload: LogoutRequest,
+    request: Request,
+    db: DbDep,
     redis: RedisDep,
     settings: SettingsDep,
-    _current_user: CurrentUserDep,
+    current_user: CurrentUserDep,
 ) -> None:
+    await AuditLogRepository(db).create(
+        actor_id=current_user.id,
+        action="user.logout",
+        entity_type="user",
+        entity_id=current_user.id,
+        ip=_client_ip(request),
+    )
+    await db.commit()
+
     if not payload.refresh_token:
         return
 

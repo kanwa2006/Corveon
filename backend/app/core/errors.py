@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -79,11 +80,19 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # pydantic-core's error dicts can carry a raw exception instance in
+    # ``ctx["error"]`` (e.g. FastAPI's own UploadFile-vs-plain-field type
+    # coercion) — not JSON-serializable, and building this very error
+    # response would otherwise crash into an unrelated 500. ``ctx`` is
+    # internal debug context, not meant for API consumers, so it's dropped
+    # rather than stringified; ``jsonable_encoder`` covers anything else
+    # unexpected in ``loc``/``input``.
+    errors = [{k: v for k, v in error.items() if k != "ctx"} for error in exc.errors()]
     return _respond(
         status.HTTP_422_UNPROCESSABLE_CONTENT,
         "validation_error",
         "Request validation failed.",
-        {"errors": exc.errors()},
+        {"errors": jsonable_encoder(errors)},
     )
 
 

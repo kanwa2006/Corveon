@@ -32,8 +32,10 @@ test.describe('auth flow', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByText(email)).toBeVisible();
-    await expect(page.getByText('Chats are coming soon')).toBeVisible();
+    // Scoped to the welcome heading — the email also appears in the app-shell
+    // nav, which would otherwise make a plain getByText(email) ambiguous.
+    await expect(page.getByRole('heading', { name: new RegExp(`Welcome, ${email}`) })).toBeVisible();
+    await expect(page.getByText('Start your first chat')).toBeVisible();
 
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/login/);
@@ -57,7 +59,11 @@ test.describe('auth flow', () => {
     await page.getByLabel('Password').fill('the-wrong-password');
     await page.getByRole('button', { name: 'Sign in' }).click();
 
-    await expect(page.getByRole('alert')).toContainText('Incorrect email or password');
+    // Scoped past Next.js's own route-announcer element, which also carries
+    // role="alert" and would otherwise make this locator ambiguous.
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Incorrect email or password' }),
+    ).toContainText('Incorrect email or password');
     await expect(page).toHaveURL(/\/login/);
   });
 
@@ -69,6 +75,10 @@ test.describe('auth flow', () => {
     await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await page.getByLabel('Confirm password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Create account' }).click();
+    // Wait for the redirect to actually land on /login before filling its
+    // form — otherwise these fills can race the still-mounted register form
+    // (which also has "Email"/"Password" fields) and hit the wrong inputs.
+    await expect(page).toHaveURL(/\/login/);
 
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password').fill(PASSWORD);
