@@ -42,6 +42,17 @@ tracer = get_tracer(__name__)
 
 _GENERIC_FAILURE_MESSAGE = "Processing failed. Please try uploading the document again."
 
+# Blueprint §12 lists OCR as its own progress stage. Image uploads always go
+# through OCR (app.ingestion.parsing.parse_image) — this can be known and
+# surfaced upfront. A PDF's OCR fallback is decided per-page, only inside
+# parse_document itself; the stage stays "extracting" for PDFs rather than
+# claim a distinction the pipeline can't actually see in advance.
+_ALWAYS_OCR_MIME_TYPES = frozenset({"image/png", "image/jpeg"})
+
+
+def _extract_stage_for(mime_type: str) -> str:
+    return "ocr" if mime_type in _ALWAYS_OCR_MIME_TYPES else "extracting"
+
 
 async def run_ingestion(
     *,
@@ -74,7 +85,9 @@ async def run_ingestion(
                 await commit_and_reapply_rls(session, user_id)
 
             with tracer.start_as_current_span("ingestion.extract"):
-                await job_repo.update_progress(job, progress_stage="extracting")
+                await job_repo.update_progress(
+                    job, progress_stage=_extract_stage_for(document.mime_type)
+                )
                 await commit_and_reapply_rls(session, user_id)
                 raw_bytes = await storage.get(document.storage_key)
                 parsed = await asyncio.to_thread(parse_document, raw_bytes, document.mime_type)
@@ -182,3 +195,68 @@ async def ingest_document(
         chat_id=uuid.UUID(chat_id),
         user_id=uuid.UUID(user_id),
     )
+
+
+async def delete_storage_objects(ctx: dict[str, Any], *, storage_keys: list[str]) -> None:
+    """Cleans up object-storage blobs left behind by a chat deletion
+    (CORVEON blueprint §23.6: hard-delete cascades to the corresponding
+    storage objects). Runs after the chat's DB rows are already gone — the
+    caller passes the storage keys it already had in hand rather than this
+    task re-deriving them, since there is nothing left in the DB to query by
+    the time it runs. ``storage.delete`` is idempotent (both backends treat
+    a missing key as success), so a partially-retried job never errors on
+    keys it already cleaned up."""
+    storage: ObjectStorage = ctx["storage"]
+    for key in storage_keys:
+        await storage.delete(key)
+    logger.info("chat_storage_cleanup_complete", object_count=len(storage_keys))
+
+
+async def reindex_chat_chunks(
+    ctx: dict[str, Any], *, chat_id: str, user_id: str, model_id: str
+) -> None:
+    """Re-embeds one chat's chunks under a new embedding model (CORVEON
+    blueprint §23.4). Triggered when the deployment's default embedding
+    model changes — existing embeddings under the old model_id are left in
+    place (never mixed with the new ones in a query, ADR-0008) rather than
+    deleted, so retrieval keeps working through the cutover; nothing reads
+    them again once every chat has a ready set of embeddings under the new
+    model_id. Idempotent and resumable: only chunks still missing an
+    embedding under ``model_id`` are processed, so a retried or repeatedly
+    scheduled run does no redundant work."""
+    embedding_model: EmbeddingModel = ctx["embedding_model"]
+    if embedding_model.model_id != model_id:
+        # The worker's embedding_model is a process-lifetime singleton
+        # loaded from settings.EMBEDDING_MODEL_ID (app/workers/main.py); this
+        # task can only ever reindex to that model, not an arbitrary one —
+        # catches a caller passing a stale/mismatched model_id early rather
+        # than silently writing embeddings tagged with the wrong id.
+        raise ValueError(
+            f"Worker is loaded with embedding model {embedding_model.model_id!r}, "
+            f"cannot reindex to {model_id!r}."
+        )
+
+    db: Database = ctx["db"]
+    chat_uuid = uuid.UUID(chat_id)
+    user_uuid = uuid.UUID(user_id)
+    async for session in db.session():
+        await set_rls_user(session, user_uuid)
+        chunk_repo = ChunkRepository(session)
+        chunks = await chunk_repo.list_chunks_missing_embedding(
+            chat_id=chat_uuid, model_id=model_id
+        )
+        if not chunks:
+            logger.info("reindex_nothing_to_do", chat_id=chat_id, model_id=model_id)
+            return
+
+        vectors = await asyncio.to_thread(
+            embedding_model.embed_passages, [chunk.text for chunk in chunks]
+        )
+        await chunk_repo.bulk_create_embeddings(
+            chat_id=chat_uuid,
+            model_id=model_id,
+            chunk_vectors=list(zip((chunk.id for chunk in chunks), vectors, strict=True)),
+        )
+        await session.commit()
+        logger.info("reindex_complete", chat_id=chat_id, model_id=model_id, chunk_count=len(chunks))
+        break

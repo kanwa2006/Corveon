@@ -1,5 +1,6 @@
-"""Unit tests for the Month 1 routing policy (app/orchestrator/chat_orchestrator.py):
-Query Understanding (classify_intent) and Task Planning (_plan_task)."""
+"""Unit tests for the Month 1 routing policy: Query Understanding
+(app/agents/query_understanding.py) and Task Planning
+(app/agents/task_planning.py)."""
 
 from __future__ import annotations
 
@@ -7,9 +8,11 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from app.agents.query_understanding import classify_intent
+from app.agents.state import OrchestratorState, RoutingPath
+from app.agents.task_planning import TaskPlanningAgent
 from app.data.repositories.chunk_repository import ChunkRepository
 from app.ingestion.embeddings import EmbeddingModel
-from app.orchestrator.chat_orchestrator import RoutingPath, _plan_task, classify_intent
 
 pytestmark = pytest.mark.unit
 
@@ -50,19 +53,23 @@ def _fake_embedding_model(vector: list[float] | None = None) -> EmbeddingModel:
     return model
 
 
+def _state(chunk_repo: ChunkRepository, user_query: str) -> OrchestratorState:
+    return OrchestratorState(
+        chat_id=_CHAT_ID,
+        user_query=user_query,
+        chunk_repo=chunk_repo,
+        embedding_model=_fake_embedding_model(),
+    )
+
+
 @pytest.mark.asyncio
 async def test_plan_task_takes_fast_path_for_trivial_query_without_checking_documents() -> None:
     chunk_repo = AsyncMock(spec=ChunkRepository)
 
-    plan = await _plan_task(
-        chunk_repo=chunk_repo,
-        embedding_model=_fake_embedding_model(),
-        chat_id=_CHAT_ID,
-        user_query="hi",
-    )
+    result = await TaskPlanningAgent().run(_state(chunk_repo, "hi"))
 
-    assert plan.path == RoutingPath.FAST_PATH
-    assert plan.citations == []
+    assert result.routing_path == RoutingPath.FAST_PATH
+    assert result.citations == []
     chunk_repo.has_ready_chunks.assert_not_called()
 
 
@@ -71,15 +78,10 @@ async def test_plan_task_uses_pure_llm_when_chat_has_no_documents() -> None:
     chunk_repo = AsyncMock(spec=ChunkRepository)
     chunk_repo.has_ready_chunks.return_value = False
 
-    plan = await _plan_task(
-        chunk_repo=chunk_repo,
-        embedding_model=_fake_embedding_model(),
-        chat_id=_CHAT_ID,
-        user_query="What treats a headache?",
-    )
+    result = await TaskPlanningAgent().run(_state(chunk_repo, "What treats a headache?"))
 
-    assert plan.path == RoutingPath.PURE_LLM
-    assert plan.citations == []
+    assert result.routing_path == RoutingPath.PURE_LLM
+    assert result.citations == []
     chunk_repo.similarity_search.assert_not_called()
 
 
@@ -89,15 +91,10 @@ async def test_plan_task_uses_rag_no_match_when_no_chunk_clears_the_similarity_t
     chunk_repo.has_ready_chunks.return_value = True
     chunk_repo.similarity_search.return_value = []
 
-    plan = await _plan_task(
-        chunk_repo=chunk_repo,
-        embedding_model=_fake_embedding_model(),
-        chat_id=_CHAT_ID,
-        user_query="What treats a headache?",
-    )
+    result = await TaskPlanningAgent().run(_state(chunk_repo, "What treats a headache?"))
 
-    assert plan.path == RoutingPath.RAG_NO_MATCH
-    assert plan.citations == []
+    assert result.routing_path == RoutingPath.RAG_NO_MATCH
+    assert result.citations == []
 
 
 @pytest.mark.asyncio
@@ -111,13 +108,8 @@ async def test_plan_task_uses_rag_grounded_when_a_relevant_chunk_is_found() -> N
     document = MagicMock(id=chunk.document_id, filename="doc.pdf")
     chunk_repo.similarity_search.return_value = [(chunk, document, 0.1)]  # similarity 0.9
 
-    plan = await _plan_task(
-        chunk_repo=chunk_repo,
-        embedding_model=_fake_embedding_model(),
-        chat_id=_CHAT_ID,
-        user_query="What treats type 2 diabetes?",
-    )
+    result = await TaskPlanningAgent().run(_state(chunk_repo, "What treats type 2 diabetes?"))
 
-    assert plan.path == RoutingPath.RAG_GROUNDED
-    assert len(plan.citations) == 1
-    assert plan.citations[0].document_filename == "doc.pdf"
+    assert result.routing_path == RoutingPath.RAG_GROUNDED
+    assert len(result.citations) == 1
+    assert result.citations[0].document_filename == "doc.pdf"

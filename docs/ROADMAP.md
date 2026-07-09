@@ -36,11 +36,12 @@ contract. No application code. Self-review complete.
   per wire protocol, not per vendor) — each registered only when its key pool is configured.
 - ✅ Orchestrator + deterministic routing policy + `routing_trace`; **fast-path** (§23.5); per-request
   LLM budget enforced. A 4-way routing policy (`fast_path` / `pure_llm` / `rag_grounded` /
-  `rag_no_match`) built from a Query Understanding step (`classify_intent`) and a Task Planning step
-  (`_plan_task`) — honestly scoped to the two subsystems that exist today (chat + documents); the
-  other five blueprint branches (public evidence, org-trusted, multi-agent verification, external
-  lookup) land as new steps in the same pipeline once Month 3/6-12 build the subsystems they need,
-  not a rewrite.
+  `rag_no_match`) built from Query Understanding, Task Planning, and Retrieval steps implemented as
+  `Agent` protocol classes (`app/agents/{query_understanding,task_planning,retrieval}.py`, blueprint
+  §7) over a shared `OrchestratorState` (`app/agents/state.py`) — honestly scoped to the two
+  subsystems that exist today (chat + documents); the other five blueprint branches (public evidence,
+  org-trusted, multi-agent verification, external lookup) land as new agent files once Month 3/6-12
+  build the subsystems they need, not a rewrite.
 - ✅ Multi-format ingestion (DOCX/PPT/MD/images + OCR). A MIME-keyed parser registry
   (`app/ingestion/parsing.py::parse_document`) dispatches to `parse_pdf` / `parse_docx` /
   `parse_pptx` / `parse_markdown` / `parse_image`; scanned (image-only) PDF pages fall back to
@@ -75,6 +76,20 @@ contract. No application code. Self-review complete.
   `tests/api`, `tests/database`, and `tests/security` already run against real Postgres+Redis
   (GitHub Actions services), which is what that layer is actually for; adding a parallel
   Testcontainers-spun Postgres would duplicate infrastructure, not coverage.
+- ✅ Blueprint reconciliation pass (docs/specifications/corveon-master-implementation-blueprint-v1.0.md
+  saved as the permanent reference; see that reconciliation for the full list). Closed every
+  concrete Month 1-scope gap found: chat deletion now cleans up its documents' object-storage blobs
+  via a fire-and-forget ARQ job and writes one `audit_log` entry for the action (§23.6); the
+  embedding-model-change reindex job exists (`app/workers/tasks.py::reindex_chat_chunks`, §23.4,
+  triggered per-chat — a system-wide admin trigger endpoint is deferred until admin RBAC/endpoints
+  exist, since none do yet); `infra/docker-compose.yml` now runs `api`/`worker` against the same
+  production image (`infra/docker/backend.Dockerfile`), which surfaced and fixed two real bugs: a
+  missing `.venv312`-style pattern in `.dockerignore` was uploading a 1.5GB build context, and seven
+  `.env.example` variables with an empty default plus a trailing comment (`KEY=    # comment`) were
+  parsed correctly by python-dotenv but not by Docker Compose's `env_file`, silently poisoning
+  `OLLAMA_RPM_LIMIT` (typed `int | None`) enough to crash container startup; OCR is now its own
+  ingestion progress stage for image uploads, where it's knowable upfront (§12). Month 3 (Evidence
+  Verification Engine) intentionally not started per explicit scope decision.
 
 ## Month 3 — Evidence Verification Engine
 - Public sources (openFDA, DailyMed, RxNav, PubMed/PMC, ClinicalTrials.gov, MeSH), cache-first.

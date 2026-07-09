@@ -9,41 +9,42 @@ module implements the two branches that are real today, split honestly into
 four distinguishable routing outcomes, and is structured so each future
 subsystem becomes one more step in the same pipeline rather than a rewrite:
 
-1. Query Understanding (``classify_intent``) — deterministic trivial-input
-   detection for the low-latency fast-path (§23.5). Not an LLM call: paying
-   a full provider round-trip just to classify would defeat the point of a
-   *fast* path, and a deterministic allow-list is exactly as auditable as
-   the rest of this policy.
-2. Task Planning (``_plan_task``) — decides the routing path from intent +
-   this chat's own state (does it have documents, did retrieval find
-   anything relevant). No always-on retrieval (CLAUDE.md §3): a trivial
-   query never even checks whether documents exist.
-3. Retrieval (``retrieve_citations``) — semantic search over this chat's own
-   documents only (per-chat isolation, ADR-0008).
+1. Query Understanding (``app.agents.query_understanding``) — deterministic
+   trivial-input detection for the low-latency fast-path (§23.5).
+2. Task Planning (``app.agents.task_planning``) — decides the routing path
+   from intent + this chat's own state (does it have documents, did
+   retrieval find anything relevant). No always-on retrieval (CLAUDE.md §3):
+   a trivial query never even checks whether documents exist.
+3. Retrieval (``app.agents.retrieval``) — semantic search over this chat's
+   own documents only (per-chat isolation, ADR-0008).
 4. Response Generation (``ProviderRegistry.stream_chat``, ADR-0006) — streams
    from the first healthy, available provider, bounded by a per-request
-   ``LLMCallBudget`` (§23.2).
+   ``LLMCallBudget`` (§23.2). Not its own agent file: it's a direct call to
+   the provider registry, with no per-request decision logic of its own to
+   warrant one.
 
-Every response is persisted with a ``routing_trace`` recording exactly what
-happened and why — no fabricated confidence scores or source-verification
-claims; those belong to the future Evidence Engine. When that engine lands,
-it runs as a step between Retrieval and Response Generation, threading the
-same state this module already builds; it does not need this file rewritten.
+Query Understanding, Task Planning, and Retrieval are ``Agent`` protocol
+implementations (blueprint §7) over a shared ``OrchestratorState`` — this
+module wires them together and owns the parts that aren't agent
+responsibilities: building the prompt, calling the provider registry, and
+persisting the result. Every response is persisted with a ``routing_trace``
+recording exactly what happened and why — no fabricated confidence scores or
+source-verification claims; those belong to the future Evidence Engine. When
+that engine lands, it runs as a new agent between Retrieval and Response
+Generation, threading the same ``OrchestratorState`` already built here; it
+does not need this file rewritten.
 """
 
 from __future__ import annotations
 
-import re
 import time
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
-from enum import StrEnum
 from typing import Any
 
+from app.agents.state import Citation, OrchestratorState, RoutingPath
+from app.agents.task_planning import TaskPlanningAgent
 from app.core.tracing import get_tracer
-from app.data.models.chunk import DocumentChunk
-from app.data.models.document import Document
 from app.data.models.message import MessageRole
 from app.data.repositories.chunk_repository import ChunkRepository
 from app.data.repositories.message_repository import MessageRepository
@@ -53,11 +54,6 @@ from app.providers.budget import LLMCallBudget, LLMCallBudgetExceededError
 from app.providers.registry import NoProviderAvailableError, ProviderRegistry
 
 tracer = get_tracer(__name__)
-
-TOP_K = 5
-# cosine similarity = 1 - cosine distance; below this, a hit isn't worth
-# grounding on and is dropped rather than padding the prompt with noise.
-MIN_SIMILARITY = 0.3
 
 _SYSTEM_PROMPT = (
     "You are Corveon, a clinical-information assistant. You are not a medical "
@@ -76,120 +72,6 @@ _GROUNDED_CONTEXT_HEADER = (
 )
 
 
-class RoutingPath(StrEnum):
-    """The routing-policy outcome (CLAUDE.md §6), reduced to today's real
-    capabilities. Month 3/6-12 add more branches (public evidence, org-
-    trusted sources, multi-agent verification) as those subsystems land."""
-
-    FAST_PATH = "fast_path"  # trivial input — retrieval skipped by policy (§23.5)
-    PURE_LLM = "pure_llm"  # substantive query, but this chat has no documents to ground on
-    RAG_GROUNDED = "rag_grounded"  # substantive query, relevant chunks found and used
-    RAG_NO_MATCH = "rag_no_match"  # chat has documents, but none were relevant enough
-
-
-# A deliberately small, explicit allow-list — greetings, acknowledgements,
-# and other conversational turns that never benefit from retrieval. Revisit
-# with a learned classifier only if this demonstrably under-covers real
-# traffic; until then a fixed list is cheaper and exactly as auditable as
-# every other deterministic step in this policy.
-_TRIVIAL_PHRASES = frozenset(
-    {
-        "hi",
-        "hello",
-        "hey",
-        "hiya",
-        "yo",
-        "howdy",
-        "thanks",
-        "thank you",
-        "thx",
-        "ty",
-        "bye",
-        "goodbye",
-        "see you",
-        "later",
-        "ok",
-        "okay",
-        "sure",
-        "yes",
-        "no",
-        "yep",
-        "nope",
-        "yeah",
-        "nah",
-        "cool",
-        "great",
-        "nice",
-        "got it",
-        "sounds good",
-    }
-)
-
-
-def classify_intent(user_query: str) -> bool:
-    """Query Understanding step — True when ``user_query`` is a trivial,
-    self-contained conversational turn that should take the fast-path
-    (§23.5) regardless of whether this chat has documents."""
-    normalized = re.sub(r"[!.?]+$", "", user_query.strip().lower())
-    return normalized in _TRIVIAL_PHRASES or len(normalized) <= 2
-
-
-@dataclass(frozen=True, slots=True)
-class Citation:
-    chunk_id: uuid.UUID
-    document_id: uuid.UUID
-    document_filename: str
-    ordinal: int
-    similarity: float
-    text: str
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "chunk_id": str(self.chunk_id),
-            "document_id": str(self.document_id),
-            "document_filename": self.document_filename,
-            "ordinal": self.ordinal,
-            "similarity": self.similarity,
-        }
-
-
-async def retrieve_citations(
-    *,
-    chunk_repo: ChunkRepository,
-    embedding_model: EmbeddingModel,
-    chat_id: uuid.UUID,
-    query: str,
-) -> list[Citation]:
-    """Semantic search over this chat's own documents only (per-chat
-    isolation, docs/ARCHITECTURE.md §5) — never queries another chat's
-    vectors, even for the same user."""
-    has_chunks = await chunk_repo.has_ready_chunks(
-        chat_id=chat_id, model_id=embedding_model.model_id
-    )
-    if not has_chunks:
-        return []
-
-    query_vector = embedding_model.embed_query(query)
-    hits: list[tuple[DocumentChunk, Document, float]] = await chunk_repo.similarity_search(
-        chat_id=chat_id,
-        model_id=embedding_model.model_id,
-        query_vector=query_vector,
-        top_k=TOP_K,
-    )
-    return [
-        Citation(
-            chunk_id=chunk.id,
-            document_id=doc.id,
-            document_filename=doc.filename,
-            ordinal=chunk.ordinal,
-            similarity=round(1 - distance, 4),
-            text=chunk.text,
-        )
-        for chunk, doc, distance in hits
-        if (1 - distance) >= MIN_SIMILARITY
-    ]
-
-
 def _build_messages(*, history: list[ChatMessage], citations: list[Citation]) -> list[ChatMessage]:
     messages = [ChatMessage(role=ChatRole.SYSTEM, content=_SYSTEM_PROMPT)]
     if citations:
@@ -201,48 +83,6 @@ def _build_messages(*, history: list[ChatMessage], citations: list[Citation]) ->
         )
     messages.extend(history)
     return messages
-
-
-@dataclass(frozen=True, slots=True)
-class _Plan:
-    path: RoutingPath
-    citations: list[Citation]
-
-
-async def _plan_task(
-    *,
-    chunk_repo: ChunkRepository,
-    embedding_model: EmbeddingModel,
-    chat_id: uuid.UUID,
-    user_query: str,
-) -> _Plan:
-    """Task Planning step — combines Query Understanding's intent
-    classification with this chat's own state to pick a RoutingPath. Only
-    reaches for the database at all once Query Understanding has already
-    ruled out the fast-path."""
-    with tracer.start_as_current_span("orchestrator.plan_task") as span:
-        span.set_attribute("chat_id", str(chat_id))
-        if classify_intent(user_query):
-            span.set_attribute("routing.path", RoutingPath.FAST_PATH.value)
-            return _Plan(path=RoutingPath.FAST_PATH, citations=[])
-
-        has_documents = await chunk_repo.has_ready_chunks(
-            chat_id=chat_id, model_id=embedding_model.model_id
-        )
-        if not has_documents:
-            span.set_attribute("routing.path", RoutingPath.PURE_LLM.value)
-            return _Plan(path=RoutingPath.PURE_LLM, citations=[])
-
-        citations = await retrieve_citations(
-            chunk_repo=chunk_repo,
-            embedding_model=embedding_model,
-            chat_id=chat_id,
-            query=user_query,
-        )
-        path = RoutingPath.RAG_GROUNDED if citations else RoutingPath.RAG_NO_MATCH
-        span.set_attribute("routing.path", path.value)
-        span.set_attribute("routing.citation_count", len(citations))
-        return _Plan(path=path, citations=citations)
 
 
 async def stream_response(
@@ -268,19 +108,27 @@ async def stream_response(
     to be re-plumbed later."""
     started = time.monotonic()
 
-    plan = await _plan_task(
-        chunk_repo=chunk_repo,
-        embedding_model=embedding_model,
+    state = OrchestratorState(
         chat_id=chat_id,
         user_query=user_query,
+        chunk_repo=chunk_repo,
+        embedding_model=embedding_model,
     )
-    messages = _build_messages(history=history, citations=plan.citations)
+    state = await TaskPlanningAgent().run(state)
+    if state.routing_path is None:
+        # Invariant: TaskPlanningAgent.run always sets this before returning.
+        # A None here means a future TaskPlanningAgent change broke that
+        # invariant — fail loudly rather than persist a routing_trace with a
+        # missing path (CLAUDE.md §10: never silence an error).
+        raise RuntimeError("TaskPlanningAgent did not set a routing_path.")
+    routing_path: RoutingPath = state.routing_path
+    messages = _build_messages(history=history, citations=state.citations)
 
     def _trace(*, provider: str | None, status: str) -> dict[str, Any]:
         return {
-            "path": plan.path.value,
+            "path": routing_path.value,
             "provider": provider,
-            "retrieved_chunks": [c.as_dict() for c in plan.citations],
+            "retrieved_chunks": [c.as_dict() for c in state.citations],
             "duration_ms": round((time.monotonic() - started) * 1000),
             "status": status,
         }
@@ -291,7 +139,7 @@ async def stream_response(
     try:
         with tracer.start_as_current_span("orchestrator.generate_response") as span:
             span.set_attribute("chat_id", str(chat_id))
-            span.set_attribute("routing.path", plan.path.value)
+            span.set_attribute("routing.path", routing_path.value)
             async for provider_name, delta in provider_registry.stream_chat(
                 messages=messages, budget=budget
             ):

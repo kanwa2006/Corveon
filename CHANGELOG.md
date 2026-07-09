@@ -9,6 +9,50 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
 ## [Unreleased]
 
 ### Added
+- **Blueprint reconciliation** (Roadmap Month 1 closeout): saved the master implementation
+  blueprint verbatim to `docs/specifications/corveon-master-implementation-blueprint-v1.0.md` as the
+  permanent in-repo reference, then closed every concrete gap the reconciliation against the current
+  repository found:
+  - Chat deletion (`DELETE /api/v1/chats/{id}`) now collects its documents' object-storage keys
+    before deleting the row, writes one `audit_log` entry for the `chat.delete` action (entity_id,
+    document_count — never content), and enqueues a new fire-and-forget ARQ job
+    (`delete_storage_objects`) to clean up the corresponding blobs after the DB rows are gone
+    (blueprint §23.6). Previously only the DB-level `ON DELETE CASCADE` ran; storage was orphaned
+    and the deletion itself wasn't audited.
+  - A background embedding-reindex job (`app/workers/tasks.py::reindex_chat_chunks`, blueprint
+    §23.4) — idempotent and resumable via a new `ChunkRepository.list_chunks_missing_embedding`
+    query, embedding only chunks that don't yet have a row under the target `model_id` rather than
+    mixing or overwriting. Triggered per-chat (`chat_id` + `user_id`, matching the RLS-scoping
+    pattern every other worker task uses); a system-wide "reindex every chat" admin trigger is
+    deferred — it would need an admin RBAC-gated endpoint and a superuser/bypass-RLS DB session
+    pattern, neither of which exists yet anywhere in this codebase (the `/audit` admin endpoint is
+    similarly not yet built), so faking one just for this would be a bigger, riskier addition than
+    the blueprint's one-sentence requirement asks for.
+  - `infra/docker-compose.yml` gains `api` and `worker` services building the same production image
+    (`infra/docker/backend.Dockerfile`) the CI/deploy path uses, differing only in command
+    (blueprint §17/§19: "docker-compose for local (api, worker, postgres, redis, ollama)"). Running
+    the backend directly on the host remains the faster inner loop for active development; this is
+    for a full from-scratch stack and for parity-testing the production image before deploy.
+  - Query Understanding, Task Planning, and Retrieval — previously three functions inside
+    `app/orchestrator/chat_orchestrator.py` — are now `Agent` protocol implementations
+    (`app/agents/base.py::Agent`, blueprint §7) over a shared `OrchestratorState`
+    (`app/agents/state.py`) in `app/agents/{query_understanding,task_planning,retrieval}.py`. Pure
+    refactor, no behavior change (same 35 orchestrator tests pass, rewritten to construct
+    `OrchestratorState` and call `TaskPlanningAgent().run()` directly). `app/agents/` was an empty
+    scaffold before this; a real agent (Evidence Verification, Medication-Safety Analysis, etc.,
+    once their subsystems land Month 3+) is now one more file here implementing the same protocol,
+    not a redesign of the two agents already wired in.
+  - OCR is now its own ingestion progress stage (`app/workers/tasks.py::_extract_stage_for`,
+    blueprint §12) for image uploads (`image/png`, `image/jpeg`), which always go through OCR and so
+    can announce it upfront; a PDF's page-by-page OCR fallback stays labeled `extracting` since
+    that's decided mid-parse, not knowable in advance. `docs/DEVELOPER.md`'s blueprint-listed
+    `Uploading`/`Cleaning text`/`Verifying content`/`Preparing response` stages were deliberately
+    **not** added — `Uploading` already happens synchronously before the job starts, there is no
+    distinct text-cleaning step to label honestly, and `Verifying content`/`Preparing response` are
+    Evidence Engine concepts that don't exist yet; a stage label with no real work behind it would
+    be exactly the kind of half-finished implementation CLAUDE.md rules out.
+
+### Added
 - **Auth + Users** (Roadmap Week 1, first slice): registration, login, refresh, logout, and profile
   lookup, with Argon2id password hashing, JWT access/refresh tokens, and Redis-backed refresh-token
   revocation.
@@ -185,6 +229,22 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
   `ChatUser`) covering register/login/list-chats/create-chat/list-messages — asserts zero request
   failures under 5 concurrent users, not a latency threshold (shared CI runners don't give
   reproducible latency numbers); run it locally for real throughput/latency figures.
+
+### Fixed
+- `.dockerignore` excluded `**/.venv` and `**/venv` but not a differently-named local venv
+  (`.venv312`) — the same gap `.gitignore` had before it was fixed earlier this session. Building
+  the `infra/docker-compose.yml` `api` service uploaded a 1.5GB build context (the venv) before
+  failing; fixed by adding `**/.venv*`, matching the `.gitignore` fix's pattern.
+- Seven `.env.example` variables had an empty default value followed by a trailing comment on the
+  same line (`OLLAMA_RPM_LIMIT=                       # local inference — unlimited by default`).
+  python-dotenv (used when running the backend directly on the host) strips that trailing comment
+  correctly; Docker Compose's `env_file` parser does not when the value portion is empty — it took
+  the literal comment text as the value. For `GEMINI_API_KEYS` this meant an unconfigured provider
+  looking configured (breaking ADR-0006's "absence of a provider is never registered" contract) with
+  garbage keys; for `OLLAMA_RPM_LIMIT` (typed `int | None`) it meant `pydantic-settings` rejecting
+  the value outright and the `api`/`worker` containers failing to start entirely. Found by actually
+  building the new `api` service, not by inspection. Fixed by moving each trailing comment to its
+  own line above the (now-clean) `KEY=`.
 
 ### Fixed
 - The `frontend` CI job's "Detect Next app" step checked for `frontend/next.config.mjs` etc., but

@@ -17,7 +17,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.storage import create_object_storage
 from app.data.base import Database
 from app.ingestion.embeddings import get_embedding_model
-from app.workers.tasks import ingest_document
+from app.workers.tasks import delete_storage_objects, ingest_document, reindex_chat_chunks
 
 logger = get_logger(__name__)
 
@@ -40,7 +40,11 @@ async def on_shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions: ClassVar[list[Callable[..., Coroutine[Any, Any, None]]]] = [ingest_document]
+    functions: ClassVar[list[Callable[..., Coroutine[Any, Any, None]]]] = [
+        ingest_document,
+        delete_storage_objects,
+        reindex_chat_chunks,
+    ]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = RedisSettings.from_dsn(get_settings().REDIS_URL)

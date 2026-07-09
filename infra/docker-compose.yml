@@ -1,7 +1,20 @@
 # Corveon — local development services.
-# Brings up Postgres (with pgvector), Redis, and Ollama. The API and ARQ worker
-# are typically run from the host during development (uvicorn / arq); a containerized
-# api/worker profile can be added once app entrypoints exist (see backend.Dockerfile).
+# Brings up Postgres (with pgvector), Redis, Ollama, and the backend API + ARQ
+# worker (blueprint §17/§19: "docker-compose for local (api, worker, postgres,
+# redis, ollama)"). api/worker share backend.Dockerfile's production image,
+# differing only in the command (§17's comment in that file) — this is the
+# same image that ships to prod, not a separate dev-only build. Running the
+# backend directly on the host (uvicorn / arq against these same services'
+# published ports) still works and remains the faster inner-loop for active
+# backend development; this profile exists for a full from-scratch local
+# stack and for parity-testing the production image before deploy.
+#
+# Usage: `docker compose -f infra/docker-compose.yml up` from the repo root,
+# with a `.env` file present (see .env.example) — provider keys are optional
+# (ADR-0006: absence is never an error), DATABASE_URL/REDIS_URL/OLLAMA_BASE_URL
+# below are overridden to the compose network's service hostnames regardless
+# of what's in .env, since "localhost" inside a container means the container
+# itself, not the host.
 
 services:
   postgres:
@@ -47,7 +60,46 @@ services:
     # Optional local, zero-cost LLM provider (the implicit default). Pull a model with:
     #   docker compose exec ollama ollama pull llama3.1
 
+  api:
+    build:
+      context: ..
+      dockerfile: infra/docker/backend.Dockerfile
+    env_file: ../.env
+    environment:
+      # Compose-network hostnames, not localhost — overrides whatever .env has.
+      DATABASE_URL: postgresql+asyncpg://corveon:corveon@postgres:5432/corveon
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434
+    ports:
+      - "8000:8000"
+    volumes:
+      - local-storage:/app/.data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/docker/backend.Dockerfile
+    command: ["arq", "app.workers.main.WorkerSettings"]
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://corveon:corveon@postgres:5432/corveon
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      - local-storage:/app/.data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redisdata:
   ollama-data:
+  local-storage:

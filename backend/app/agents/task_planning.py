@@ -1,0 +1,52 @@
+"""Task Planning agent (blueprint §7) — combines Query Understanding's intent
+classification with this chat's own state (does it have documents, did
+retrieval find anything relevant) to pick a ``RoutingPath``. No always-on
+retrieval (CLAUDE.md §3): a trivial query never even checks whether documents
+exist, and a query with no documents never calls Retrieval at all."""
+
+from __future__ import annotations
+
+from app.agents.query_understanding import QueryUnderstandingAgent
+from app.agents.retrieval import RetrievalAgent
+from app.agents.state import OrchestratorState, RoutingPath
+from app.core.tracing import get_tracer
+
+tracer = get_tracer(__name__)
+
+
+class TaskPlanningAgent:
+    name = "task_planning"
+
+    def __init__(
+        self,
+        query_understanding: QueryUnderstandingAgent | None = None,
+        retrieval: RetrievalAgent | None = None,
+    ) -> None:
+        self._query_understanding = query_understanding or QueryUnderstandingAgent()
+        self._retrieval = retrieval or RetrievalAgent()
+
+    async def run(self, state: OrchestratorState) -> OrchestratorState:
+        with tracer.start_as_current_span("orchestrator.plan_task") as span:
+            span.set_attribute("chat_id", str(state.chat_id))
+
+            state = await self._query_understanding.run(state)
+            if state.is_trivial:
+                state.routing_path = RoutingPath.FAST_PATH
+                span.set_attribute("routing.path", RoutingPath.FAST_PATH.value)
+                return state
+
+            has_documents = await state.chunk_repo.has_ready_chunks(
+                chat_id=state.chat_id, model_id=state.embedding_model.model_id
+            )
+            if not has_documents:
+                state.routing_path = RoutingPath.PURE_LLM
+                span.set_attribute("routing.path", RoutingPath.PURE_LLM.value)
+                return state
+
+            state = await self._retrieval.run(state)
+            state.routing_path = (
+                RoutingPath.RAG_GROUNDED if state.citations else RoutingPath.RAG_NO_MATCH
+            )
+            span.set_attribute("routing.path", state.routing_path.value)
+            span.set_attribute("routing.citation_count", len(state.citations))
+            return state

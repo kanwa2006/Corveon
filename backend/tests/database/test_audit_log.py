@@ -121,6 +121,41 @@ async def test_document_upload_and_delete_create_audit_entries(
 
 
 @pytest.mark.asyncio
+async def test_chat_delete_creates_an_audit_entry(
+    client: AsyncClient,
+    app,  # type: ignore[no-untyped-def]
+) -> None:
+    """CORVEON blueprint §23.6: hard-deleting a chat must record a single
+    audit-log entry for the action (not the content it cascaded away)."""
+    email = "audit-chat-delete@example.com"
+    password = "correcthorsebattery"
+    await client.post("/api/v1/auth/register", json={"email": email, "password": password})
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    headers = {"Authorization": f"Bearer {login.json()['access']}"}
+
+    chat_response = await client.post("/api/v1/chats", json={"title": "Bye chat"}, headers=headers)
+    chat_id = chat_response.json()["id"]
+
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "Content to be cascaded away.")
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    await client.post(
+        f"/api/v1/chats/{chat_id}/documents",
+        files={"file": ("bye.pdf", pdf_bytes, "application/pdf")},
+        headers=headers,
+    )
+
+    delete_response = await client.delete(f"/api/v1/chats/{chat_id}", headers=headers)
+    assert delete_response.status_code == 204
+
+    rows = await _audit_rows(app, "chat.delete")
+    matching = [row for row in rows if str(row.entity_id) == chat_id]
+    assert len(matching) == 1
+    assert matching[0].audit_metadata == {"document_count": 1}
+
+
+@pytest.mark.asyncio
 async def test_message_export_creates_an_audit_entry(
     client: AsyncClient,
     app,  # type: ignore[no-untyped-def]

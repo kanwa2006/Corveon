@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 const STAGE_LABELS: Record<string, string> = {
   validating: 'Validating',
   extracting: 'Extracting text',
+  ocr: 'Reading text from image (OCR)',
   chunking: 'Chunking',
   embedding: 'Embedding',
   indexing: 'Indexing',

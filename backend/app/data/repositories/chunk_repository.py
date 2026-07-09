@@ -83,3 +83,21 @@ class ChunkRepository:
         )
         result = await self._session.execute(stmt)
         return result.first() is not None
+
+    async def list_chunks_missing_embedding(
+        self, *, chat_id: uuid.UUID, model_id: str
+    ) -> list[DocumentChunk]:
+        """Chunks for this chat with no embedding yet under ``model_id`` —
+        the reindex job's work queue when the default embedding model
+        changes (blueprint §23.4: never mix vectors from different models in
+        one query; reindex rather than mix in place)."""
+        already_embedded = (
+            select(ChunkEmbedding.chunk_id)
+            .where(ChunkEmbedding.chat_id == chat_id, ChunkEmbedding.model_id == model_id)
+            .scalar_subquery()
+        )
+        stmt = select(DocumentChunk).where(
+            DocumentChunk.chat_id == chat_id, DocumentChunk.id.not_in(already_embedded)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
