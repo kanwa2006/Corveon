@@ -46,7 +46,7 @@ jobs:
       JWT_SECRET_KEY: ci-only-not-a-real-secret-ci-only-not-a-real-secret
       CORVEON_ENV: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -98,7 +98,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The frontend gates activate once the Next app scaffold lands (Roadmap Week 1);
       # until then this job passes with a notice instead of failing on an empty tree.
       # The first frontend PR commits pnpm-lock.yaml, enabling --frozen-lockfile below.
@@ -166,7 +166,7 @@ jobs:
       JWT_SECRET_KEY: ci-only-not-a-real-secret-ci-only-not-a-real-secret
       CORVEON_ENV: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -277,7 +277,7 @@ jobs:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
       NEXT_PUBLIC_SSE_BASE_URL: http://localhost:8000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
