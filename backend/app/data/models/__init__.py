@@ -5,6 +5,14 @@ from app.data.models.audit_log import AuditLog
 from app.data.models.chat import Chat
 from app.data.models.chunk import ChunkEmbedding, DocumentChunk
 from app.data.models.document import Document, DocumentStatus
+from app.data.models.evidence import (
+    EvidenceCitation,
+    EvidenceClaim,
+    EvidenceSourceName,
+    EvidenceVerification,
+    SourceClass,
+    VerificationStatus,
+)
 from app.data.models.job import Job, JobStatus, JobType
 from app.data.models.message import Message, MessageRole
 from app.data.models.organization import Organization
@@ -17,12 +25,18 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "DocumentStatus",
+    "EvidenceCitation",
+    "EvidenceClaim",
+    "EvidenceSourceName",
+    "EvidenceVerification",
     "Job",
     "JobStatus",
     "JobType",
     "Message",
     "MessageRole",
     "Organization",
+    "SourceClass",
     "User",
     "UserRole",
+    "VerificationStatus",
 ]
