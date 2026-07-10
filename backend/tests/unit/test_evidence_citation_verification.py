@@ -40,3 +40,15 @@ def test_citation_missing_url_is_not_resolved() -> None:
 
 def test_citation_missing_both_is_not_resolved() -> None:
     assert is_citation_resolved(_result(identifier=None, url=None)) is False
+
+
+def test_uploaded_document_citation_with_identifier_but_no_url_is_resolved() -> None:
+    result = _result(
+        source=EvidenceSourceName.UPLOADED_DOCUMENT, url=None, identifier="chunk-id-123"
+    )
+    assert is_citation_resolved(result) is True
+
+
+def test_uploaded_document_citation_missing_identifier_is_not_resolved() -> None:
+    result = _result(source=EvidenceSourceName.UPLOADED_DOCUMENT, url=None, identifier=None)
+    assert is_citation_resolved(result) is False

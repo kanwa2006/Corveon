@@ -17,12 +17,21 @@ an identifier and a URL a human could follow to check it themselves. A
 connector bug (a malformed API response parsed into a title-only stub) is
 still possible; this is what would catch it, and CLAUDE.md's rule applies
 uniformly regardless of cause: incomplete citations are flagged, not
-shown."""
+shown.
+
+Uploaded-document evidence is the one exception to the "needs a URL" bar:
+a chat's own PDF/DOCX chunk has no external URL to resolve to — its
+identifier (the chunk id) is itself the resolvable reference, since the
+user already has the source document. Requiring a URL here would make
+``SourceClass.UPLOADED_DOCUMENT`` unreachable in practice."""
 
 from __future__ import annotations
 
+from app.data.models.evidence import EvidenceSourceName
 from app.evidence.connectors.base import EvidenceResult
 
 
 def is_citation_resolved(result: EvidenceResult) -> bool:
+    if result.source == EvidenceSourceName.UPLOADED_DOCUMENT:
+        return bool(result.identifier)
     return bool(result.identifier) and bool(result.url)
