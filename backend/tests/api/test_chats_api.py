@@ -123,6 +123,26 @@ async def test_patch_is_partial(client: AsyncClient, auth_headers: AuthHeaders) 
 
 
 @pytest.mark.asyncio
+async def test_patch_title_with_nul_byte_is_422_not_500(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    # Postgres text columns reject an embedded NUL byte at the wire level
+    # (asyncpg CharacterNotInRepertoireError); a Python str otherwise allows
+    # it freely, so this must be rejected at the Pydantic validation layer
+    # rather than surfacing as an unhandled 500 from the DB driver — found
+    # by the schemathesis contract job (CI).
+    alice = await auth_headers("alice@example.com")
+    created = await client.post("/api/v1/chats", json={"title": "Old"}, headers=alice)
+    chat_id = created.json()["id"]
+
+    response = await client.patch(
+        f"/api/v1/chats/{chat_id}", json={"title": "bad\x00title"}, headers=alice
+    )
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "validation_error"
+
+
+@pytest.mark.asyncio
 async def test_patch_not_owner_is_404(client: AsyncClient, auth_headers: AuthHeaders) -> None:
     alice = await auth_headers("alice@example.com")
     bob = await auth_headers("bob@example.com")
