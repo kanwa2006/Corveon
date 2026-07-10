@@ -35,6 +35,19 @@ async def test_create_chat_defaults_title_when_omitted(
 
 
 @pytest.mark.asyncio
+async def test_create_chat_title_with_nul_byte_is_422_not_500(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    # Same class of bug as test_patch_title_with_nul_byte_is_422_not_500,
+    # fixed proactively here since ChatCreateRequest.title reaches the DB
+    # the same way ChatUpdateRequest.title does.
+    headers = await auth_headers("alice@example.com")
+    response = await client.post("/api/v1/chats", json={"title": "bad\x00title"}, headers=headers)
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "validation_error"
+
+
+@pytest.mark.asyncio
 async def test_create_chat_requires_authentication(client: AsyncClient) -> None:
     response = await client.post("/api/v1/chats", json={"title": "x"})
     assert response.status_code == 401
@@ -195,6 +208,20 @@ async def test_search_filter(client: AsyncClient, auth_headers: AuthHeaders) -> 
     assert response.status_code == 200
     titles = [c["title"] for c in response.json()]
     assert titles == ["Renal dosing question"]
+
+
+@pytest.mark.asyncio
+async def test_search_with_nul_byte_is_422_not_500(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    # Same class of bug as test_patch_title_with_nul_byte_is_422_not_500,
+    # this time in the `search` query param feeding ChatRepository's ILIKE
+    # filter — found by the schemathesis contract job (CI) on PR #16.
+    alice = await auth_headers("alice@example.com")
+
+    response = await client.get("/api/v1/chats?search=bad%00search", headers=alice)
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "validation_error"
 
 
 @pytest.mark.asyncio

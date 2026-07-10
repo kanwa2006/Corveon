@@ -10,6 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.validation import reject_nul_bytes
+
 
 class MedicationAnalyzeRequest(BaseModel):
     """Free text describing one or more medications (a discharge-summary
@@ -18,17 +20,7 @@ class MedicationAnalyzeRequest(BaseModel):
 
     raw_text: str = Field(min_length=1, max_length=10_000)
 
-    @field_validator("raw_text")
-    @classmethod
-    def _reject_nul_bytes(cls, value: str) -> str:
-        # Postgres text columns reject an embedded NUL byte at the wire
-        # level (asyncpg CharacterNotInRepertoireError) — must surface as a
-        # 422 here, not an uncaught 500 from the DB driver later (the exact
-        # bug fixed in PATCH /chats/{id}, applied proactively here since
-        # this field is stored the same way).
-        if "\x00" in value:
-            raise ValueError("raw_text must not contain NUL bytes.")
-        return value
+    _reject_nul_bytes = field_validator("raw_text")(reject_nul_bytes)
 
 
 class MedicationEvent(BaseModel):
