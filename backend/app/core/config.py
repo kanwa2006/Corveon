@@ -121,6 +121,14 @@ class Settings(BaseSettings):
     RXNAV_MAX_RPS: int = 20
     EVIDENCE_CACHE_TTL_SECONDS: int = 86400
 
+    # ── Medication-Safety Engine (data/loaders/README.md) ───────
+    # DDInter 2.0 is a pinned, checksummed local snapshot, not a live API
+    # (ADR-0004) — never fetched at request time. Blank means "no snapshot
+    # imported yet"; the DDI rules engine then relies solely on the openFDA
+    # label-derived fallback for that request (absence is normal, same
+    # posture as an unconfigured AI provider, §23.1).
+    DDINTER_SNAPSHOT_PATH: str | None = None
+
     # ── Observability ─────────────────────────────────────────
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
     OTEL_SERVICE_NAME: str = "corveon-api"

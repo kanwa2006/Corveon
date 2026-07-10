@@ -64,10 +64,16 @@ documents plus six public connectors (PubMed, DailyMed, openFDA, ClinicalTrials.
 RxNorm), then classifies source, scores confidence, and verifies each citation — see
 `docs/ARCHITECTURE.md` §Evidence Verification Engine.
 
+Medication-Safety Engine Phase 1 implemented Month 6-12 (`app/medication/`): free-text medication
+parsing, RxNorm normalization, and deterministic drug-drug interaction detection (DDInter 2.0 +
+openFDA label fallback, ADR-0004) — see `docs/ARCHITECTURE.md` §Medication-Safety Engine. `renal`,
+`pip_flags`, and `discrepancies` are later phases, not yet implemented; the response shape below
+reflects only what Phase 1 actually returns.
+
 | Method | Path | Result |
 |---|---|---|
 | POST | `/chats/{id}/verify` `{message_id}` | `202` + SSE — a `claim` event per completed, already-scored claim (`{id, ordinal, text, source_class, confidence_score, confidence_rationale, flags[], citations[]}`), a final `done` event (`{verification_id, status}`), or an `error` event (`provider_unavailable` \| `budget_exceeded`, degraded mode, ADR-0006). Same shape as `POST /chats/{id}/messages`; the browser connects directly with a stream ticket (`?ticket=`, ADR-0016). |
-| POST | `/chats/{id}/medications/analyze` | `202` + SSE → `{normalized[], interactions[], renal[], pip_flags[], discrepancies[]}` — planned (Month 3+), not yet implemented |
+| POST | `/chats/{id}/medications/analyze` `{raw_text}` | `202` + SSE — a `medication` event per parsed, RxNorm-normalized, already-persisted medication (`{id, raw_text, name, rxcui, dose, route, frequency}`), an `interaction` event per DDI finding (`{id, medication_a_id, medication_b_id, severity, source, rule_id, explanation, provenance}`), a final `done` event (`{status}`), or an `error` event (`provider_unavailable` \| `budget_exceeded`, degraded mode). Same SSE shape and stream-ticket bridge as `/verify`. `severity` ∈ `{major, moderate, minor, unclassified}`; `source` ∈ `{ddinter, openfda_label}`. |
 
 ## Trusted sources (org)
 | Method | Path |

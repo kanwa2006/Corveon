@@ -15,6 +15,7 @@ import { useRef, useState } from 'react';
 
 import { DocumentPanel } from '@/components/chats/document-panel';
 import { EmptyState } from '@/components/chats/empty-state';
+import { MedicationPanel } from '@/components/chats/medication-panel';
 import { MessageComposer } from '@/components/chats/message-composer';
 import { MessageThread } from '@/components/chats/message-thread';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { Dialog, type DialogHandle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useChat, useDeleteChat, useUpdateChat } from '@/lib/hooks/use-chats';
 import { useDeleteDocument, useDocuments, useUploadDocument } from '@/lib/hooks/use-documents';
+import { useMedicationAnalysis } from '@/lib/hooks/use-medication-analysis';
 import { useMessages, useSendMessage } from '@/lib/hooks/use-messages';
 import { cn } from '@/lib/utils';
 
@@ -38,6 +40,7 @@ export default function ChatDetailPage(): React.JSX.Element {
   const documentsQuery = useDocuments(params.chatId);
   const uploadDocument = useUploadDocument(params.chatId);
   const deleteDocument = useDeleteDocument(params.chatId);
+  const medicationAnalysis = useMedicationAnalysis(params.chatId);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -170,6 +173,15 @@ export default function ChatDetailPage(): React.JSX.Element {
         onUpload={(file) => void uploadDocument.upload(file)}
         onDelete={(documentId) => deleteDocument.mutate(documentId)}
         onDismissUpload={uploadDocument.dismissUpload}
+      />
+
+      <MedicationPanel
+        status={medicationAnalysis.status}
+        medications={medicationAnalysis.medications}
+        findings={medicationAnalysis.findings}
+        errorMessage={medicationAnalysis.errorMessage}
+        onAnalyze={(rawText) => void medicationAnalysis.analyze(rawText)}
+        onReset={medicationAnalysis.reset}
       />
 
       <div className="flex flex-1 flex-col justify-between gap-4">

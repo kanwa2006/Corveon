@@ -9,6 +9,48 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
 ## [Unreleased]
 
 ### Added
+- **Medication-Safety Engine, Phase 1: normalization + drug-drug interaction detection** (Roadmap
+  Month 6-12, first slice): given free text describing a patient's medications, parses it into
+  structured entries, normalizes each to RxCUI via RxNorm, persists them, then runs a deterministic
+  DDI rules engine and persists its findings — `POST /chats/{id}/medications/analyze` (SSE, streams
+  one result at a time as it completes). Strictly scoped to normalization + DDI detection; renal
+  checks, Beers/STOPP-START screens, discrepancy classification, and guardrailed explanations are
+  explicitly later phases of this same engine, not started — see
+  [docs/ROADMAP.md](docs/ROADMAP.md) Month 6-12 for the full done/deferred breakdown.
+  - Data model: `medications` / `medication_findings` / `drug_data_snapshots` / `drug_interactions`
+    (migration `0006`); the chat-scoped pair gets the same triple-enforced isolation as every other
+    content table, while the snapshot/interaction pair is deliberately unscoped, shared reference
+    data.
+  - DDInter 2.0 pinned, checksummed snapshot loader
+    (`backend/app/medication/ddinter_loader.py`, [ADR-0018](docs/adr/0018-ddinter-loader-location-and-no-bundled-dataset.md))
+    — never fetched at request time. The real 302k-row DDInter dataset isn't fetchable or licensed
+    to vendor in this environment, so the loader ships as real, checksum-verified infrastructure an
+    operator points at a provisioned export; dev/test uses a small, explicitly-labeled fixture of
+    real, well-established textbook interactions (warfarin+aspirin, etc.) — never fabricated data,
+    per CLAUDE.md's golden rule.
+  - RxNorm normalization (`app/medication/rxnorm_client.py`) and free-text parsing
+    (`app/medication/normalizer.py`) — deliberately separate, minimal modules from the Evidence
+    Verification Engine's own RxNorm/openFDA connectors (different domain, different return shape),
+    not a reuse that would couple the two engines' evolution together. Parsing is the only LLM call
+    in the whole pipeline (one per request, through the existing provider registry/budget), strictly
+    guardrailed to extract only name/dose/route/frequency already present in the text.
+  - Deterministic DDI rules engine (`app/medication/interactions.py`) — DDInter 2.0 primary,
+    openFDA label-text fallback (`app/medication/openfda_ddi_client.py`) for pairs the snapshot
+    doesn't cover, surfaced as the FDA's own label language (`FindingSeverity.UNCLASSIFIED`) rather
+    than a synthesized severity the source didn't provide. No LLM involvement anywhere in this
+    module — the rules engine is the source of truth (CLAUDE.md §6).
+  - `POST /chats/{id}/medications/analyze` (`app/api/routers/medication.py`) — 202 + SSE, same
+    shape and stream-ticket bridge (ADR-0016) as `POST /chats/{id}/verify`: a `medication` event
+    per normalized/persisted medication, an `interaction` event per DDI finding, a final `done`
+    event, or an `error` event on a degraded-mode condition. Audit-logged (`medication.analyze`).
+  - Frontend: a medication-list input + streamed results panel
+    (`components/chats/medication-panel.tsx`) on the chat detail page — source-class-style severity
+    badges (evidence-* design tokens), RxCUI match indicators, and linked openFDA label sources —
+    mirroring the Evidence Verification UI's established pattern.
+  - Tests written alongside each feature: golden tests against the pinned snapshot (real textbook
+    interactions), database RLS isolation, API (happy path, degraded mode), unit tests for the
+    loader/normalizer/rules engine/openFDA client, frontend unit/hook/component tests, plus a live
+    browser verification (real Gemini parse + real RxNav lookups) against the running backend.
 - **Blueprint reconciliation** (Roadmap Month 1 closeout): saved the master implementation
   blueprint verbatim to `docs/specifications/corveon-master-implementation-blueprint-v1.0.md` as the
   permanent in-repo reference, then closed every concrete gap the reconciliation against the current

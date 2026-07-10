@@ -95,14 +95,15 @@ All IDs UUID; all timestamps UTC. Every content-bearing table carries `chat_id`.
 | `images` | chat_id, document_id?, ocr_text |
 | `saved_responses` / `notes` | chat_id, content |
 | `trusted_sources` | org_id, type, name, config JSONB, version, is_active |
-| `medications` | chat_id, raw_text, rxcui, name, dose, route, frequency |
-| `medication_findings` | chat_id, type, severity, source, rule_id, explanation, provenance JSONB |
+| `medications` | chat_id, raw_text, rxcui?, name, dose?, route?, frequency? |
+| `medication_findings` | chat_id, medication_a_id, medication_b_id?, type, severity, source, rule_id, explanation, provenance JSONB |
 | `audit_log` | append-only: actor_id, action, entity, ip, metadata JSONB |
 | `jobs` | chat_id, type, status, progress_stage, error |
 | `evidence_verifications` | chat_id, message_id, status (pending/running/succeeded/failed), error |
 | `evidence_claims` | chat_id, verification_id, ordinal, text, source_class, confidence_score, confidence_rationale, flags JSONB |
 | `evidence_citations` | chat_id, claim_id, source, title, url, identifier, snippet, published_date, supports_claim, resolved |
-| `drug_data_snapshots` | source, version, checksum, imported_at (reproducible pins) |
+| `drug_data_snapshots` | source, version, checksum, row_count (reproducible pins, not chat-scoped) |
+| `drug_interactions` | snapshot_id, drug_a_name, drug_b_name (sorted pair), severity, description (not chat-scoped) |
 
 External-connector responses are cached in Redis, not a Postgres table — see
 [ADR-0017](adr/0017-evidence-cache-via-redis-not-postgres-table.md).
@@ -139,24 +140,39 @@ MeSH, RxNorm) plus this chat's own uploaded-document chunks feed retrieval; a ci
 shown once it resolves to a real record at its source (fabricated-citation guard,
 `app/evidence/citation_verification.py`) — never LLM-generated.
 
-## 8. Deployment topology (free-tier MVP)
+## 8. Medication-Safety Engine
+Phase 1 implemented Month 6-12 (`app/medication/`, `POST /chats/{id}/medications/analyze` — see
+[API.md](API.md)): free-text medication parsing (LLM, guardrailed to extract only name/dose/route/
+frequency already present in the text — never infers or adds a fact), RxNorm/RxCUI normalization,
+and deterministic drug-drug interaction detection. **The rules engine is the source of truth**
+(CLAUDE.md §6) — DDI detection makes no LLM call. DDInter 2.0 (ADR-0004) is the primary source,
+loaded as a pinned, checksummed snapshot (`app/medication/ddinter_loader.py`, never fetched at
+request time, [ADR-0018](adr/0018-ddinter-loader-location-and-no-bundled-dataset.md)); openFDA
+label-derived text is the fallback for pairs the snapshot doesn't cover, surfaced as the FDA's own
+label language (`FindingSeverity.UNCLASSIFIED`) rather than a synthesized severity the source didn't
+provide. Renal/dose checks (ADR-0005), Beers 2023 + STOPP/START v3 screens, medication-discrepancy
+classification, and guardrailed LLM explanations are later phases of this same engine, not yet
+implemented — see [ROADMAP.md](ROADMAP.md).
+
+## 9. Deployment topology (free-tier MVP)
 Vercel (frontend static/RSC) · Fly.io/Render (FastAPI API **and** ARQ worker — the persistent
 process that serves all SSE, ADR-0007) · Supabase/Neon (Postgres+pgvector) · Upstash (Redis) ·
 Cloudflare R2 (objects) · Gemini free / Ollama local (LLM). Details in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-## 9. Repository structure
+## 10. Repository structure
 ```
 backend/app/{api,orchestrator,agents,providers,evidence,medication,ingestion,data,core,workers}
 backend/{migrations,tests}
 frontend/{app,components,lib,tests}
 infra/            docker, compose, CI, deploy, Grafana
-data/loaders/     pinned drug-data snapshot loaders
+data/loaders/     operator-provisioned raw snapshot files (never committed); loader code lives in
+                  backend/app/medication/ (ADR-0018)
 docs/{,adr/}      this documentation set + decision records
 .github/workflows CI/CD
 ```
 Folder responsibilities are also enumerated in [`../CLAUDE.md`](../CLAUDE.md) §4.
 
-## 10. Cross-cutting concerns
+## 11. Cross-cutting concerns
 - **Security** → [SECURITY.md](SECURITY.md) (auth, isolation, prompt-injection, uploads, encryption, audit).
 - **Observability** → [DEBUGGING.md](DEBUGGING.md) (OTel, Prometheus/Grafana, structlog, Sentry, health).
 - **Config** → [ENVIRONMENT.md](ENVIRONMENT.md) (typed pydantic-settings, every env var).

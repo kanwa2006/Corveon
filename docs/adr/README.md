@@ -23,5 +23,6 @@ once `Accepted`; to change a decision, add a new ADR that supersedes the old one
 | [0015](0015-hnsw-index-via-raw-migration-ddl.md) | `chunk_embeddings` HNSW index via raw migration DDL, not a tracked model `Index` | Accepted |
 | [0016](0016-sse-stream-ticket-bridge.md) | Short-lived stream ticket bridges httpOnly-cookie auth to direct-to-backend SSE | Accepted |
 | [0017](0017-evidence-cache-via-redis-not-postgres-table.md) | External evidence cache lives in Redis, not a Postgres `external_cache` table | Accepted |
+| [0018](0018-ddinter-loader-location-and-no-bundled-dataset.md) | DDInter loader lives in `backend/app/medication/`; the real dataset is never bundled | Accepted |
 
 New ADRs use [`_template.md`](_template.md) and the next sequential number.
