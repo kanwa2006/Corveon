@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { Download, FileText, Sparkles, User } from 'lucide-react';
 import { useState } from 'react';
 
+import { EvidenceVerificationPanel } from '@/components/chats/evidence-verification-panel';
+import { useEvidenceVerification } from '@/lib/hooks/use-evidence-verification';
 import { exportMessage, type ExportFormat, type MessagePublic } from '@/lib/api/messages';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +17,7 @@ export function MessageBubble({ message }: MessageBubbleProps): React.JSX.Elemen
   const isUser = message.role === 'user';
   const citations = message.routing_trace?.retrieved_chunks ?? [];
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
+  const verification = useEvidenceVerification(message.chat_id);
 
   const handleExport = (format: ExportFormat): void => {
     setExportingFormat(format);
@@ -101,6 +104,16 @@ export function MessageBubble({ message }: MessageBubbleProps): React.JSX.Elemen
               PDF
             </button>
           </div>
+        )}
+
+        {!isUser && message.content && (
+          <EvidenceVerificationPanel
+            status={verification.status}
+            claims={verification.claims}
+            errorMessage={verification.errorMessage}
+            onVerify={() => void verification.verify(message.id)}
+            onDismiss={verification.reset}
+          />
         )}
       </div>
     </motion.div>
