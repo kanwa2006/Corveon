@@ -9,8 +9,8 @@ trusts it (CLAUDE.md §5: "agent outputs are schema-validated")."""
 from __future__ import annotations
 
 import json
-import re
 
+from app.evidence._llm_json import strip_code_fences
 from app.providers.base import ChatMessage, ChatRole
 from app.providers.budget import LLMCallBudget
 from app.providers.registry import ProviderRegistry
@@ -24,12 +24,6 @@ _SYSTEM_PROMPT = (
     "purely conversational or a question), return an empty array. Respond with ONLY a JSON "
     "array of strings — no markdown code fences, no commentary, no other text."
 )
-
-_CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-
-
-def _strip_code_fences(raw: str) -> str:
-    return _CODE_FENCE_RE.sub("", raw).strip()
 
 
 async def extract_claims(
@@ -64,7 +58,7 @@ async def extract_claims(
 
 def _parse_claims(raw: str) -> list[str] | None:
     try:
-        parsed = json.loads(_strip_code_fences(raw))
+        parsed = json.loads(strip_code_fences(raw))
     except json.JSONDecodeError:
         return None
     if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
