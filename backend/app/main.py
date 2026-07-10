@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import auth as auth_router
 from app.api.routers import chats as chats_router
 from app.api.routers import documents as documents_router
+from app.api.routers import evidence as evidence_router
 from app.api.routers import health as health_router
 from app.api.routers import jobs as jobs_router
 from app.api.routers import messages as messages_router
@@ -31,6 +32,7 @@ from app.core.redis import create_redis_client
 from app.core.storage import create_object_storage
 from app.core.tracing import configure_tracing, instrument_app
 from app.data.base import Database
+from app.evidence.registry import build_evidence_connector_registry
 from app.providers.registry import build_provider_registry
 
 logger = get_logger(__name__)
@@ -50,6 +52,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # would reset each provider's key-pool round-robin state (itertools.cycle)
     # every time, defeating the point of rotating across a free-tier key pool.
     app.state.provider_registry = build_provider_registry(settings)
+    # Every evidence connector is always registered (unlike LLM providers,
+    # none of the six public sources has an "absence" state — see
+    # app/evidence/registry.py); built once per process for the same reason
+    # the provider registry is.
+    app.state.evidence_connectors = build_evidence_connector_registry(settings, app.state.redis)
     # The embedding model is NOT loaded here — it's a lazy, lru_cache'd
     # singleton (app/ingestion/embeddings.py) resolved on first use via
     # EmbeddingModelDep, so endpoints/tests that never touch search or
@@ -92,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_router.router, prefix="/api/v1")
     app.include_router(jobs_router.router, prefix="/api/v1")
     app.include_router(search_router.router, prefix="/api/v1")
+    app.include_router(evidence_router.router, prefix="/api/v1")
 
     if settings.PROMETHEUS_METRICS_ENABLED:
         mount_metrics(app)

@@ -20,6 +20,7 @@ from app.core.token_denylist import is_revoked
 from app.data.models.user import User, UserRole
 from app.data.repositories.user_repository import UserRepository
 from app.data.rls import set_rls_user
+from app.evidence.registry import EvidenceConnectorRegistry
 from app.ingestion.embeddings import EmbeddingModel, get_embedding_model
 from app.providers.registry import ProviderRegistry
 
@@ -55,6 +56,11 @@ async def get_provider_registry(request: Request) -> ProviderRegistry:
     return registry
 
 
+async def get_evidence_connector_registry(request: Request) -> EvidenceConnectorRegistry:
+    registry: EvidenceConnectorRegistry = request.app.state.evidence_connectors
+    return registry
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 RedisDep = Annotated[Redis, Depends(get_redis)]
@@ -62,6 +68,9 @@ ArqDep = Annotated[ArqRedis, Depends(get_arq_pool)]
 StorageDep = Annotated[ObjectStorage, Depends(get_storage)]
 EmbeddingModelDep = Annotated[EmbeddingModel, Depends(get_embedding_model_dep)]
 ProviderRegistryDep = Annotated[ProviderRegistry, Depends(get_provider_registry)]
+EvidenceConnectorRegistryDep = Annotated[
+    EvidenceConnectorRegistry, Depends(get_evidence_connector_registry)
+]
 
 
 async def get_current_user(

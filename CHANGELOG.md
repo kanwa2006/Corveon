@@ -230,6 +230,75 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
   failures under 5 concurrent users, not a latency threshold (shared CI runners don't give
   reproducible latency numbers); run it locally for real throughput/latency figures.
 
+### Added
+- **Evidence Verification Engine** (Roadmap Month 3): given one existing message, extracts its
+  independently-verifiable claims and checks each against real medical evidence, end to end —
+  `POST /chats/{id}/verify` (SSE, streams one scored claim at a time as it completes). Strictly
+  scoped to the explicit Month 3 checklist (evidence engine, six public connectors, retrieval,
+  provenance, confidence scoring, conflict/misinformation detection, citation verification, API,
+  frontend UI, tests, docs) — org-trusted sources and premium analytics/dashboards are deliberately
+  out of scope for this phase; see [docs/ROADMAP.md](docs/ROADMAP.md) Month 3 for the full
+  done/deferred breakdown.
+  - Data model: `evidence_verifications` / `evidence_claims` / `evidence_citations` (migration
+    `0005`), every table chat_id-anchored with the same triple-enforced isolation (app guard +
+    Postgres RLS + repository invariant) as every other content table.
+  - Six connectors (`app/evidence/connectors/`) — PubMed, DailyMed, openFDA, ClinicalTrials.gov,
+    MeSH, RxNorm — each a plain-httpx client behind a common `EvidenceConnector` protocol,
+    cache-first via Redis ([ADR-0017](docs/adr/0017-evidence-cache-via-redis-not-postgres-table.md),
+    chosen over the blueprint's alternative Postgres `external_cache` table) and rate-limited with
+    Month 1's `TokenBucket` reused unmodified; a connector returns `[]` rather than raising on a
+    not-found/rate-limited/unreachable condition, so one source's outage never breaks the others.
+  - Retrieval layer merges those six connectors with this chat's own uploaded-document chunks,
+    reusing Month 1's `ChunkRepository`/`EmbeddingModel` RAG primitives at the same relevance
+    threshold — `app/agents/retrieval.py` itself is untouched, only its constants are imported.
+  - Claim extraction and per-claim stance analysis (`app/evidence/claim_extraction.py`,
+    `app/evidence/analysis.py`) each make exactly one LLM call through the existing provider
+    registry/`LLMCallBudget` (no new rate-limiting abstraction) — analysis compares a claim against
+    every retrieved excerpt in one call, not one call per citation, so a multi-claim verification
+    stays within the existing per-request budget. Each excerpt gets a three-way stance (supports /
+    contradicts / irrelevant), not a boolean — the distinction genuine conflict detection needs (a
+    claim with nine irrelevant excerpts and one contradicting one is unsupported, not conflicting).
+  - Deterministic source classification and confidence scoring (`app/evidence/scoring.py`, no LLM) —
+    five source classes, and a 0–100 score that's an additive, documented composite of source-class
+    weight + independent-source agreement + recency + citation-resolution rate, always
+    reconstructable from its own rationale string.
+  - Fabricated-citation guard (`app/evidence/citation_verification.py`): structurally prevented by
+    construction (citations only ever come from a connector's real parsed API response, never
+    LLM-generated text) plus a narrower structural-completeness check — an incomplete citation is
+    flagged, not shown, per CLAUDE.md's golden rule. Uploaded-document evidence resolves by
+    identifier alone (no external URL exists for the chat's own document chunks); external-source
+    evidence needs both an identifier and a URL.
+  - `POST /chats/{id}/verify` (`app/api/routers/evidence.py`) — 202 + SSE, same shape and stream-
+    ticket bridge (ADR-0016) as `POST /chats/{id}/messages`: a `claim` event per completed claim, a
+    final `done` event, or an `error` event on a degraded-mode condition. Audit-logged
+    (`evidence.verify`) like every other sensitive action CLAUDE.md §8 names.
+  - Not built as an `app.agents.base.Agent` — that protocol's shared `OrchestratorState` is shaped
+    around the single-query message-send pipeline; this pipeline runs per-claim in a loop with
+    incremental persistence and its own DB-session lifecycle, different enough to force-fitting it
+    would distort the existing type rather than reuse it. Documented in
+    `app/evidence/verification_service.py`'s own module docstring as a deliberate choice.
+  - Frontend: a "Verify claims" trigger on assistant messages
+    (`components/chats/evidence-verification-panel.tsx`) streaming claims in with a source-class
+    badge (the five `evidence-*` design tokens reserved since Week 1), a confidence meter, detection
+    flags, and linked citations — reuses the same stream-ticket SSE pattern
+    `lib/api/messages.ts`/`use-messages.ts` established.
+  - Tests written alongside each feature: backend unit (connectors against `httpx.MockTransport` +
+    real Redis; claim extraction, stance analysis, scoring, citation verification; the full
+    verification-service pipeline, mocking only the DB-touching repositories — the same
+    `AsyncMock(spec=...)` convention `tests/unit/test_chat_orchestrator.py` already uses), API (the
+    full `/verify` SSE round trip, happy path and degraded mode), and database (RLS isolation for
+    all three new tables); frontend unit/hook/component tests plus a live browser verification
+    against the real running backend (real ticket mint + SSE round trip, degraded-mode rendering
+    confirmed end to end).
+
+### Fixed
+- `is_citation_resolved` required both an `identifier` and a `url` to consider a citation resolved,
+  but uploaded-document evidence always has `url=None` (a chat's own PDF/DOCX chunk has no external
+  URL to resolve to) — meaning `SourceClass.UPLOADED_DOCUMENT` claims could never actually surface a
+  citation, a dead path rather than the intentional gap `SourceClass.ORG_TRUSTED` is. Caught while
+  writing the verification-service tests, before merge. Fixed: uploaded-document evidence now
+  resolves by identifier alone; external-source evidence is unchanged (still needs both).
+
 ### Fixed
 - `.dockerignore` excluded `**/.venv` and `**/venv` but not a differently-named local venv
   (`.venv312`) — the same gap `.gitignore` had before it was fixed earlier this session. Building
