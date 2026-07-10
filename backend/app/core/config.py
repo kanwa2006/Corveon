@@ -98,10 +98,28 @@ class Settings(BaseSettings):
 
     # ── External medical APIs ────────────────────────────────
     OPENFDA_API_KEY: str | None = None
+    OPENFDA_BASE_URL: str = "https://api.fda.gov"
+    # openFDA: 240 req/min both with and without a key; a key raises the
+    # daily cap (1,000/day -> 120,000/day), which this per-process RPM
+    # limiter doesn't model — daily caps are enforced by openFDA itself.
+    OPENFDA_MAX_RPM: int = 240
     NCBI_EUTILS_API_KEY: str | None = None
     NCBI_EUTILS_EMAIL: str | None = None
+    NCBI_EUTILS_BASE_URL: str = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+    # PubMed/PMC E-utilities: 3 req/s without a key, 10 req/s with one (§8).
+    NCBI_EUTILS_MAX_RPS: int = 10
+    DAILYMED_BASE_URL: str = "https://dailymed.nlm.nih.gov/dailymed/services/v2"
+    # DailyMed publishes no documented rate limit; a conservative default
+    # keeps this a good API citizen without a blueprint-specified number to
+    # match.
+    DAILYMED_MAX_RPS: int = 5
+    CLINICALTRIALS_BASE_URL: str = "https://clinicaltrials.gov/api/v2"
+    CLINICALTRIALS_MAX_RPS: int = 5
+    MESH_BASE_URL: str = "https://id.nlm.nih.gov/mesh"
+    MESH_MAX_RPS: int = 5
     RXNAV_BASE_URL: str = "https://rxnav.nlm.nih.gov/REST"
     RXNAV_MAX_RPS: int = 20
+    EVIDENCE_CACHE_TTL_SECONDS: int = 86400
 
     # ── Observability ─────────────────────────────────────────
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None

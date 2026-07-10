@@ -68,11 +68,21 @@ come from the environment only — never code, never the database.
 | `PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS` | how long a circuit stays open before a half-open probe (default `30`) |
 
 ## External medical APIs
+Evidence Verification Engine connectors (`app/evidence/connectors/`, blueprint §8). Every
+connector's rate limit is a per-process token bucket — a exhausted bucket makes that one source
+return no results for the current request rather than blocking or erroring (§8: "conflicting/
+insufficient evidence" is itself a provenance class). Responses are cached in Redis, not a Postgres
+table (ADR-0017); `EVIDENCE_CACHE_TTL_SECONDS` controls how long.
+
 | Var | Meaning |
 |---|---|
-| `OPENFDA_API_KEY` | optional; raises limits to 240/min + 120k/day |
-| `NCBI_EUTILS_API_KEY` / `NCBI_EUTILS_EMAIL` | PubMed E-utilities; email required by NCBI |
+| `OPENFDA_API_KEY` / `OPENFDA_BASE_URL` / `OPENFDA_MAX_RPM` | key optional; raises the *daily* cap (openFDA enforces that itself, not this app) — the 240/min rate applies with or without a key |
+| `NCBI_EUTILS_API_KEY` / `NCBI_EUTILS_EMAIL` / `NCBI_EUTILS_BASE_URL` / `NCBI_EUTILS_MAX_RPS` | PubMed/PMC E-utilities; email required by NCBI; 10 rps with a key, 3 without (default here assumes a key is configured) |
+| `DAILYMED_BASE_URL` / `DAILYMED_MAX_RPS` | structured product labels (SPL); no documented rate limit, default is a conservative choice |
+| `CLINICALTRIALS_BASE_URL` / `CLINICALTRIALS_MAX_RPS` | trial evidence; no documented rate limit, default is a conservative choice |
+| `MESH_BASE_URL` / `MESH_MAX_RPS` | concept normalization; no documented rate limit, default is a conservative choice |
 | `RXNAV_BASE_URL` / `RXNAV_MAX_RPS` | RxNorm normalization (≤20 rps). **No DDI API** (ADR-0004) |
+| `EVIDENCE_CACHE_TTL_SECONDS` | how long a connector's response is cached in Redis before re-fetching |
 
 ## Observability
 | Var | Meaning |
