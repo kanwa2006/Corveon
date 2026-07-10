@@ -84,6 +84,11 @@ table (ADR-0017); `EVIDENCE_CACHE_TTL_SECONDS` controls how long.
 | `RXNAV_BASE_URL` / `RXNAV_MAX_RPS` | RxNorm normalization (≤20 rps). **No DDI API** (ADR-0004) |
 | `EVIDENCE_CACHE_TTL_SECONDS` | how long a connector's response is cached in Redis before re-fetching |
 
+## Medication-Safety Engine
+| Var | Default | Meaning |
+|---|---|---|
+| `DDINTER_SNAPSHOT_PATH` | — (blank) | Optional local path to an operator-provisioned DDInter 2.0 CSV export, imported via `python -m app.medication.ddinter_loader` (see [`data/loaders/README.md`](../data/loaders/README.md), [ADR-0018](adr/0018-ddinter-loader-location-and-no-bundled-dataset.md)) — never fetched at request time. Blank means no snapshot imported yet; the DDI rules engine falls back solely to the live openFDA label check for that request (absence is normal, same posture as an unconfigured AI provider, §23.1). RxNorm normalization (`RXNAV_BASE_URL`/`RXNAV_MAX_RPS`) and the openFDA DDI fallback (`OPENFDA_API_KEY`/`OPENFDA_BASE_URL`/`OPENFDA_MAX_RPM`) reuse the same settings already listed under External medical APIs above. |
+
 ## Observability
 | Var | Meaning |
 |---|---|

@@ -22,6 +22,8 @@ from app.data.repositories.user_repository import UserRepository
 from app.data.rls import set_rls_user
 from app.evidence.registry import EvidenceConnectorRegistry
 from app.ingestion.embeddings import EmbeddingModel, get_embedding_model
+from app.medication.openfda_ddi_client import OpenFdaDdiClient
+from app.medication.rxnorm_client import RxNormClient
 from app.providers.registry import ProviderRegistry
 
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -61,6 +63,16 @@ async def get_evidence_connector_registry(request: Request) -> EvidenceConnector
     return registry
 
 
+async def get_rxnorm_client(request: Request) -> RxNormClient:
+    client: RxNormClient = request.app.state.rxnorm_client
+    return client
+
+
+async def get_openfda_ddi_client(request: Request) -> OpenFdaDdiClient:
+    client: OpenFdaDdiClient = request.app.state.openfda_ddi_client
+    return client
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 RedisDep = Annotated[Redis, Depends(get_redis)]
@@ -71,6 +83,8 @@ ProviderRegistryDep = Annotated[ProviderRegistry, Depends(get_provider_registry)
 EvidenceConnectorRegistryDep = Annotated[
     EvidenceConnectorRegistry, Depends(get_evidence_connector_registry)
 ]
+RxNormClientDep = Annotated[RxNormClient, Depends(get_rxnorm_client)]
+OpenFdaDdiClientDep = Annotated[OpenFdaDdiClient, Depends(get_openfda_ddi_client)]
 
 
 async def get_current_user(

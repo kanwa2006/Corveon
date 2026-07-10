@@ -104,6 +104,7 @@ ignore = []
 # corrupting the multi-line triple-quoted SQL literal itself.
 "migrations/versions/0003_messages_documents_chunks_jobs_with_rls.py" = ["S608"]
 "migrations/versions/0005_evidence_verification_engine.py" = ["S608"]
+"migrations/versions/0006_medication_safety_engine.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.12"

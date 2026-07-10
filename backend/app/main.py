@@ -15,6 +15,7 @@ from app.api.routers import documents as documents_router
 from app.api.routers import evidence as evidence_router
 from app.api.routers import health as health_router
 from app.api.routers import jobs as jobs_router
+from app.api.routers import medication as medication_router
 from app.api.routers import messages as messages_router
 from app.api.routers import search as search_router
 from app.core.arq import create_arq_pool
@@ -33,6 +34,8 @@ from app.core.storage import create_object_storage
 from app.core.tracing import configure_tracing, instrument_app
 from app.data.base import Database
 from app.evidence.registry import build_evidence_connector_registry
+from app.medication.openfda_ddi_client import OpenFdaDdiClient
+from app.medication.rxnorm_client import RxNormClient
 from app.providers.registry import build_provider_registry
 
 logger = get_logger(__name__)
@@ -57,6 +60,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # app/evidence/registry.py); built once per process for the same reason
     # the provider registry is.
     app.state.evidence_connectors = build_evidence_connector_registry(settings, app.state.redis)
+    # Medication-Safety Engine Phase 1 live lookups — same RxNav/openFDA
+    # settings the Evidence connectors use (same public APIs, different
+    # domain-scoped clients, see app/medication/rxnorm_client.py's own
+    # docstring for why they aren't the same classes). Always registered,
+    # like the evidence connectors: neither RxNav nor openFDA has an
+    # "absence" state.
+    app.state.rxnorm_client = RxNormClient(
+        base_url=settings.RXNAV_BASE_URL,
+        redis=app.state.redis,
+        cache_ttl_seconds=settings.EVIDENCE_CACHE_TTL_SECONDS,
+        max_rps=settings.RXNAV_MAX_RPS,
+    )
+    app.state.openfda_ddi_client = OpenFdaDdiClient(
+        base_url=settings.OPENFDA_BASE_URL,
+        api_key=settings.OPENFDA_API_KEY,
+        redis=app.state.redis,
+        cache_ttl_seconds=settings.EVIDENCE_CACHE_TTL_SECONDS,
+        max_rpm=settings.OPENFDA_MAX_RPM,
+    )
     # The embedding model is NOT loaded here — it's a lazy, lru_cache'd
     # singleton (app/ingestion/embeddings.py) resolved on first use via
     # EmbeddingModelDep, so endpoints/tests that never touch search or
@@ -100,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router.router, prefix="/api/v1")
     app.include_router(search_router.router, prefix="/api/v1")
     app.include_router(evidence_router.router, prefix="/api/v1")
+    app.include_router(medication_router.router, prefix="/api/v1")
 
     if settings.PROMETHEUS_METRICS_ENABLED:
         mount_metrics(app)

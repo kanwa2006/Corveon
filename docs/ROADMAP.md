@@ -137,7 +137,36 @@ contract. No application code. Self-review complete.
   other sensitive action named in CLAUDE.md §8).
 
 ## Month 6–12 — Medication-Safety Engine (full) & enterprise
-- RxNorm normalization + **DDInter 2.0** (pinned) with **openFDA fallback** (ADR-0004).
+
+### Phase 1 — Normalization + drug-drug interaction detection ✅
+- ✅ Data model: `medications` / `medication_findings` / `drug_data_snapshots` / `drug_interactions`
+  (migration `0006`), chat-scoped tables RLS-isolated exactly like every other content table;
+  `drug_data_snapshots`/`drug_interactions` are deliberately excluded from RLS — shared reference
+  data, not per-chat content.
+- ✅ DDInter 2.0 pinned, checksummed snapshot loader (`app/medication/ddinter_loader.py`,
+  [ADR-0018](adr/0018-ddinter-loader-location-and-no-bundled-dataset.md)) — never fetched at request
+  time; the real 302k-row dataset isn't bundled (not fetchable/licensed-to-vendor in this
+  environment), so it ships as real, production-ready, checksum-verified infrastructure an operator
+  points at a provisioned export, not fabricated data.
+- ✅ RxNorm normalization + **DDInter 2.0** (pinned) with **openFDA label fallback** (ADR-0004) —
+  `app/medication/normalizer.py` (LLM-guardrailed free-text → structured entries, one LLM call per
+  request) + `app/medication/rxnorm_client.py` (RxCUI lookup) + `app/medication/interactions.py`
+  (deterministic pairwise DDI rules engine, no LLM) + `app/medication/openfda_ddi_client.py`
+  (label-text fallback, tagged `unclassified` severity — the FDA's own words, not a synthesized
+  severity tier).
+- ✅ API — `POST /chats/{id}/medications/analyze` (SSE, `medication`/`interaction`/`done`/`error`
+  events, same stream-ticket bridge as `/verify`) returning `{normalized[], interactions[]}` only;
+  `renal[]`/`pip_flags[]`/`discrepancies[]` are later phases below, not stubbed.
+- ✅ Frontend — a medication-list input + streamed results panel
+  (`components/chats/medication-panel.tsx`) on the chat detail page, mirroring the Evidence
+  Verification UI's established pattern.
+- ✅ Tests written alongside each feature — golden tests against a pinned snapshot (real,
+  well-established textbook interactions, not fabricated), RLS isolation, API (happy path +
+  degraded mode), unit tests for the loader/normalizer/rules engine/openFDA fallback, frontend
+  unit/hook/component tests plus a live browser verification (real Gemini parse + real RxNav
+  lookups) against the real running backend.
+
+### Later phases — not yet implemented
 - **Dual renal equations** — Cockcroft-Gault + 2021 race-free CKD-EPI, divergence flags (ADR-0005).
 - **Beers 2023** + **STOPP/START v3** screens; medication-discrepancy classification.
 - Guardrailed LLM explanations (no ungrounded facts).

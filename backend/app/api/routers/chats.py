@@ -9,12 +9,15 @@ crafted id can never distinguish "not found" from "not yours" (CLAUDE.md §8).
 from __future__ import annotations
 
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, status
+from pydantic import AfterValidator
 
 from app.api.deps import ArqDep, CurrentUserDep, RlsDbDep
 from app.api.routers._common import get_owned_chat_or_404
 from app.api.schemas.chat import ChatCreateRequest, ChatPublic, ChatUpdateRequest
+from app.core.validation import reject_nul_bytes
 from app.data.repositories.audit_log_repository import AuditLogRepository
 from app.data.repositories.chat_repository import ChatRepository
 from app.data.repositories.document_repository import DocumentRepository
@@ -42,7 +45,7 @@ async def create_chat(
 async def list_chats(
     db: RlsDbDep,
     current_user: CurrentUserDep,
-    search: str | None = Query(default=None),
+    search: Annotated[str | None, Query(), AfterValidator(reject_nul_bytes)] = None,
     pinned: bool | None = Query(default=None),
     archived: bool | None = Query(default=None),
 ) -> list[ChatPublic]:

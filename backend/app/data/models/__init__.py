@@ -14,6 +14,15 @@ from app.data.models.evidence import (
     VerificationStatus,
 )
 from app.data.models.job import Job, JobStatus, JobType
+from app.data.models.medication import (
+    DrugDataSnapshot,
+    DrugInteraction,
+    FindingSeverity,
+    FindingType,
+    InteractionSource,
+    Medication,
+    MedicationFinding,
+)
 from app.data.models.message import Message, MessageRole
 from app.data.models.organization import Organization
 from app.data.models.user import User, UserRole
@@ -25,13 +34,20 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "DocumentStatus",
+    "DrugDataSnapshot",
+    "DrugInteraction",
     "EvidenceCitation",
     "EvidenceClaim",
     "EvidenceSourceName",
     "EvidenceVerification",
+    "FindingSeverity",
+    "FindingType",
+    "InteractionSource",
     "Job",
     "JobStatus",
     "JobType",
+    "Medication",
+    "MedicationFinding",
     "Message",
     "MessageRole",
     "Organization",

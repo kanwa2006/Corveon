@@ -1,9 +1,14 @@
 # Pinned drug-data snapshot loaders
 
-Deterministic medication safety (§9) requires **reproducible, auditable** reference data. Loaders in
-this directory import each source as a **pinned, checksummed snapshot** recorded in the
-`drug_data_snapshots` table (`source, version, checksum, imported_at`). Golden tests pin against a
-specific snapshot version so rule outputs are stable across time (ADR-0004, ADR-0005).
+Deterministic medication safety (§9) requires **reproducible, auditable** reference data. Each
+source is imported as a **pinned, checksummed snapshot** recorded in the `drug_data_snapshots`
+table (`source, version, checksum, row_count, created_at`). Golden tests pin against a specific
+snapshot version so rule outputs are stable across time (ADR-0004, ADR-0005).
+
+Loader **implementations** live in `backend/app/medication/` (importable/testable like every other
+backend module, e.g. `app/medication/ddinter_loader.py`), not in this directory — this directory is
+where an operator places the downloaded raw snapshot file before running the loader against it (see
+"Rules" below; the file itself is never committed).
 
 ## Sources (verified July 2026)
 | Source | Version pin | Use | License / access |
@@ -25,4 +30,12 @@ specific snapshot version so rule outputs are stable across time (ADR-0004, ADR-
 - **Synthea** — default synthetic patients for development and CI; no credentialing required.
 - **MIMIC-IV** — research-only, credentialed; used for advanced evaluation, not in the product.
 
-Loader implementations are added in the Month 6–12 phase (see [../../docs/ROADMAP.md](../../docs/ROADMAP.md)).
+## Running a loader
+```
+DATABASE_URL=... python -m app.medication.ddinter_loader path/to/snapshot.csv --version 2025-01
+```
+Expects a UTF-8 CSV with columns `drug_a,drug_b,severity,description` (`severity` one of DDInter's
+own `major`/`moderate`/`minor` scale). Pass `--checksum <sha256>` to verify against a previously
+reviewed checksum; a mismatch aborts the import rather than silently ingesting a different file.
+Remaining sources (Beers 2023, STOPP/START v3, RxNorm's monthly release) are later Medication-Safety
+Engine phases (see [../../docs/ROADMAP.md](../../docs/ROADMAP.md)) — not yet implemented.
