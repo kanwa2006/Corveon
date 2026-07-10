@@ -99,8 +99,13 @@ All IDs UUID; all timestamps UTC. Every content-bearing table carries `chat_id`.
 | `medication_findings` | chat_id, type, severity, source, rule_id, explanation, provenance JSONB |
 | `audit_log` | append-only: actor_id, action, entity, ip, metadata JSONB |
 | `jobs` | chat_id, type, status, progress_stage, error |
-| `external_cache` | key, source, payload JSONB, fetched_at, ttl |
+| `evidence_verifications` | chat_id, message_id, status (pending/running/succeeded/failed), error |
+| `evidence_claims` | chat_id, verification_id, ordinal, text, source_class, confidence_score, confidence_rationale, flags JSONB |
+| `evidence_citations` | chat_id, claim_id, source, title, url, identifier, snippet, published_date, supports_claim, resolved |
 | `drug_data_snapshots` | source, version, checksum, imported_at (reproducible pins) |
+
+External-connector responses are cached in Redis, not a Postgres table — see
+[ADR-0017](adr/0017-evidence-cache-via-redis-not-postgres-table.md).
 
 Embedding dimension `vector(384)` matches bge-small-en / e5-small. Every similarity query filters
 by **both** `chat_id` and `model_id` (ADR-0008 / §23.4); model changes require a reindex job.
@@ -121,12 +126,18 @@ by **both** `chat_id` and `model_id` (ADR-0008 / §23.4); model changes require 
   provider; low-stakes agent steps prefer local Ollama to conserve scarce cloud quota.
 
 ## 7. Evidence & provenance
-Each emitted statement gets exactly one source class:
-**(a)** uploaded document · **(b)** verified public evidence · **(c)** org-trusted evidence ·
-**(d)** AI reasoning · **(e)** conflicting/insufficient. Confidence (0–100) is a transparent
-composite of source-class weight, cross-source agreement, recency vs guideline dates, and
-citation-resolution success — documented, never a black box. Conflicts are surfaced with both
-positions and dates, never silently resolved.
+Implemented Month 3 (`app/evidence/`, `POST /chats/{id}/verify` — see [API.md](API.md)). Each
+extracted claim gets exactly one source class: **(a)** uploaded document · **(b)** verified public
+evidence · **(c)** org-trusted evidence · **(d)** AI reasoning · **(e)** conflicting/insufficient.
+`org_trusted` is a real, reserved classification — no claim is tagged with it until the
+org-trusted-sources subsystem (still planned) exists to produce it. Confidence (0–100) is a
+transparent, deterministic (no LLM) composite of source-class weight, cross-source agreement,
+recency vs guideline dates, and citation-resolution success — always reconstructable from its own
+rationale string, never a black box. Conflicts are surfaced with both positions, never silently
+resolved toward one side. Six public connectors (PubMed, DailyMed, openFDA, ClinicalTrials.gov,
+MeSH, RxNorm) plus this chat's own uploaded-document chunks feed retrieval; a citation is only ever
+shown once it resolves to a real record at its source (fabricated-citation guard,
+`app/evidence/citation_verification.py`) — never LLM-generated.
 
 ## 8. Deployment topology (free-tier MVP)
 Vercel (frontend static/RSC) · Fly.io/Render (FastAPI API **and** ARQ worker — the persistent

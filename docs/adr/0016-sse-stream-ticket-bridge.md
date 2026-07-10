@@ -14,6 +14,12 @@ native `EventSource` cannot attach a custom `Authorization` header even if JS co
 This feature adds two endpoints the browser must reach directly: `POST /chats/{id}/messages`
 (chat streaming) and `GET /jobs/{id}/events` (ingestion progress).
 
+> **Update (Month 3, Evidence Verification Engine):** a third endpoint, `POST /chats/{id}/verify`
+> (`app/api/routers/evidence.py`), reuses this exact mechanism unchanged — `get_streaming_user` is
+> generic (it decodes any valid `TokenType.STREAM` ticket, not one scoped to a specific route), so
+> no new ticket type or dependency was needed. The "two endpoints" framing above describes this
+> ADR's original scope; the decision itself scales to any SSE endpoint without amendment.
+
 ## Decision
 A Next.js Route Handler (`POST /api/stream-ticket`), authenticated the normal cookie/`backendFetch`
 way, calls a new backend endpoint `POST /api/v1/auth/stream-ticket` that mints a **stream ticket**:

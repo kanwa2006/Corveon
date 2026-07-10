@@ -92,12 +92,49 @@ contract. No application code. Self-review complete.
   Verification Engine) intentionally not started per explicit scope decision.
 
 ## Month 3 — Evidence Verification Engine
-- Public sources (openFDA, DailyMed, RxNav, PubMed/PMC, ClinicalTrials.gov, MeSH), cache-first.
-- Source-class provenance tagging, transparent confidence scoring, **misinformation/outdated/
-  fabrication detection**, conflict surfacing.
-- Org-trusted sources (versioned, access-scoped connectors).
-- Citation verification (fabricated-citation guard).
-- Premium dashboards/analytics; RLS hardening; audit logging.
+- ✅ Six public connectors (`app/evidence/connectors/`) — PubMed, DailyMed, openFDA,
+  ClinicalTrials.gov, MeSH, RxNorm — each a plain-httpx client (no SDK) behind a common
+  `EvidenceConnector` protocol, cache-first (Redis, [ADR-0017](adr/0017-evidence-cache-via-redis-not-postgres-table.md))
+  and non-blocking rate-limited (`TokenBucket`, reused unmodified from Month 1). A connector never
+  raises for not-found/rate-limited — returns `[]`, treated as reduced coverage, not a hard error.
+- ✅ Evidence retrieval layer (`app/evidence/retrieval.py`, `app/evidence/registry.py`) fans out to
+  every connector concurrently and merges with this chat's own uploaded-document chunks (reusing
+  Month 1's `ChunkRepository`/`EmbeddingModel` RAG primitives at the same relevance threshold).
+- ✅ Provenance model + source classification (`app/evidence/scoring.py::classify_source`) — five
+  source classes (uploaded document, verified public, org-trusted, AI reasoning,
+  conflicting/insufficient); a three-way per-excerpt stance (supports/contradicts/irrelevant, not a
+  boolean) is what makes genuine conflict detection possible.
+- ✅ Deterministic confidence scoring (`score_confidence`, no LLM) — a documented additive composite
+  of source-class weight, independent-source agreement, recency, and citation-resolution rate,
+  always reconstructable from its own rationale string.
+- ✅ Conflict detection + misinformation/outdated/unsupported flagging (`app/evidence/analysis.py`) —
+  one LLM call per claim (not per citation, keeps the per-request LLM-call budget bounded) comparing
+  the claim against every retrieved excerpt at once; flags are only ever raised from concrete
+  evidence, never guessed.
+- ✅ Citation verification / fabricated-citation guard (`app/evidence/citation_verification.py`) —
+  structurally prevented by construction (citations only ever come from a connector's parsed API
+  response, never LLM-generated text), plus a narrower structural-completeness check so an
+  incomplete connector result is flagged, not shown.
+- ✅ Evidence Verification API — `POST /chats/{id}/verify` (`app/api/routers/evidence.py`), SSE,
+  streaming one scored claim at a time as it completes rather than batching (see
+  [API.md](API.md#evidence--medication)); reuses the exact stream-ticket bridge (ADR-0016) and
+  `LLMCallBudget`/provider-registry seams Month 1 built, no new abstractions.
+- ✅ Frontend Evidence Verification UI — a "Verify claims" trigger on assistant messages
+  (`components/chats/evidence-verification-panel.tsx`) streaming claims in with a source-class
+  badge (the five `evidence-*` design tokens already reserved in Week 1), a confidence meter,
+  detection flags, and linked citations.
+- ✅ Tests written alongside each feature — backend unit (connectors against `httpx.MockTransport` +
+  real Redis, claim extraction/analysis/scoring/citation-verification, the full verification-service
+  pipeline mocking only the DB-touching repositories per this codebase's existing convention), API
+  (the full `/verify` SSE round trip, happy path + degraded mode), database (RLS isolation for all
+  three new tables); frontend unit/hook/component tests plus a live browser check against the real
+  running backend.
+- ⏭ Org-trusted sources (versioned, access-scoped connectors) — explicitly out of this phase's scope
+  by an explicit scope decision; `SourceClass.ORG_TRUSTED` is a real, reserved enum value that no
+  connector produces yet, not a placeholder.
+- ⏭ Premium dashboards/analytics — not started; no `analytics`/`audit` read endpoints exist yet
+  (audit *writing* for the verify action itself is done, via `AuditLogRepository`, matching every
+  other sensitive action named in CLAUDE.md §8).
 
 ## Month 6–12 — Medication-Safety Engine (full) & enterprise
 - RxNorm normalization + **DDInter 2.0** (pinned) with **openFDA fallback** (ADR-0004).

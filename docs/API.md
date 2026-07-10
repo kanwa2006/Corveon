@@ -58,10 +58,16 @@ Implemented Week 1.
 | POST | `/chats/{id}/search` | `200 [hit]` — semantic, **in-chat only**; filters by both `chat_id` and embedding `model_id` (ADR-0008) |
 
 ## Evidence & medication
+Evidence Verification implemented Month 3 (`app/evidence/`). Extracts the independently-verifiable
+claims from one existing message, retrieves evidence per claim from this chat's own uploaded
+documents plus six public connectors (PubMed, DailyMed, openFDA, ClinicalTrials.gov, MeSH,
+RxNorm), then classifies source, scores confidence, and verifies each citation — see
+`docs/ARCHITECTURE.md` §Evidence Verification Engine.
+
 | Method | Path | Result |
 |---|---|---|
-| POST | `/chats/{id}/verify` | `202` + SSE → `{claims:[{text, source_class, confidence, evidence[]}]}` |
-| POST | `/chats/{id}/medications/analyze` | `202` + SSE → `{normalized[], interactions[], renal[], pip_flags[], discrepancies[]}` |
+| POST | `/chats/{id}/verify` `{message_id}` | `202` + SSE — a `claim` event per completed, already-scored claim (`{id, ordinal, text, source_class, confidence_score, confidence_rationale, flags[], citations[]}`), a final `done` event (`{verification_id, status}`), or an `error` event (`provider_unavailable` \| `budget_exceeded`, degraded mode, ADR-0006). Same shape as `POST /chats/{id}/messages`; the browser connects directly with a stream ticket (`?ticket=`, ADR-0016). |
+| POST | `/chats/{id}/medications/analyze` | `202` + SSE → `{normalized[], interactions[], renal[], pip_flags[], discrepancies[]}` — planned (Month 3+), not yet implemented |
 
 ## Trusted sources (org)
 | Method | Path |
@@ -86,7 +92,9 @@ Implemented Week 1.
 | GET | `/ready` | readiness (DB / Redis / provider readiness) |
 
 ## Notes
-- `source_class` ∈ `{uploaded_doc, verified_public, org_trusted, ai_reasoning, conflicting}`.
+- `source_class` ∈ `{uploaded_document, verified_public, org_trusted, ai_reasoning,
+  conflicting_insufficient}`. `org_trusted` is a real, reserved classification — no claim is
+  tagged with it until the org-trusted-sources subsystem (still planned) exists to produce it.
 - Every content endpoint authorizes on **both** user identity and resource ownership; the active
   `chat_id` scopes all reads (per-chat isolation, ADR-adjacent §10.2).
 - Rate limiting returns `429` with `Retry-After`; providers are load-balanced/failed-over behind
