@@ -42,20 +42,27 @@ test.describe('accessibility — chat detail page (messages + documents)', () =>
     const providerNotice = page.getByText('No AI provider is currently reachable.');
     await expect(providerNotice).toBeVisible({ timeout: 15_000 });
 
-    // The message bubble fades in (Framer Motion animates the wrapping
-    // motion.div's inline `opacity` 0 -> 1); wait for that transition to
-    // settle before scanning, otherwise axe can sample a mid-transition
-    // frame and report a false-positive color-contrast violation.
+    // The persisted assistant message (degraded-state explanation plus any
+    // public-evidence chips) renders from a messages refetch slightly after
+    // the banner — wait for it too, or axe scans while it is still arriving.
+    await expect(page.getByText(/No AI provider was reachable/)).toBeVisible({ timeout: 15_000 });
+
+    // Every message bubble fades in (Framer Motion animates each wrapping
+    // motion.div's inline `opacity` 0 -> 1); wait for ALL in-flight
+    // transitions to settle before scanning, otherwise axe samples a
+    // mid-transition frame and reports the blended foreground color as a
+    // false-positive contrast violation. (A banner-only ancestor check used
+    // to live here — it let the later-arriving assistant bubble be sampled
+    // mid-fade.)
     await expect(async () => {
-      const opacity = await providerNotice.evaluate((el) => {
-        let ancestor: HTMLElement | null = el as HTMLElement;
-        while (ancestor && ancestor.style.opacity === '') {
-          ancestor = ancestor.parentElement;
-        }
-        return ancestor?.style.opacity ?? '1';
-      });
-      expect(opacity).toBe('1');
-    }).toPass({ timeout: 2_000 });
+      const inFlight = await page.evaluate(
+        () =>
+          Array.from(document.querySelectorAll<HTMLElement>('[style*="opacity"]')).filter(
+            (el) => el.style.opacity !== '' && Number(el.style.opacity) < 1,
+          ).length,
+      );
+      expect(inFlight).toBe(0);
+    }).toPass({ timeout: 5_000 });
 
     const threadResults = await new AxeBuilder({ page }).analyze();
     expect(threadResults.violations).toEqual([]);
