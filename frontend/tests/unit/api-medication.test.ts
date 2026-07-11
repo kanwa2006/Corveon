@@ -42,8 +42,11 @@ describe('lib/api/medication', () => {
       const onMedication = vi.fn();
       await streamMedicationAnalysis('c1', 'metformin and aspirin', null, 'ticket-123', {
         onMedication,
+        onPreviousMedication: vi.fn(),
         onInteraction: vi.fn(),
         onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
         onDone: vi.fn(),
         onError: vi.fn(),
       });
@@ -69,8 +72,11 @@ describe('lib/api/medication', () => {
       const onInteraction = vi.fn();
       await streamMedicationAnalysis('c1', 'warfarin and aspirin', null, 'ticket-123', {
         onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
         onInteraction,
         onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
         onDone: vi.fn(),
         onError: vi.fn(),
       });
@@ -95,8 +101,11 @@ describe('lib/api/medication', () => {
       const onRenal = vi.fn();
       await streamMedicationAnalysis('c1', 'apixaban 5mg', null, 'ticket-123', {
         onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
         onInteraction: vi.fn(),
         onRenal,
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
         onDone: vi.fn(),
         onError: vi.fn(),
       });
@@ -111,8 +120,11 @@ describe('lib/api/medication', () => {
       const onDone = vi.fn();
       await streamMedicationAnalysis('c1', 'metformin', null, 'ticket-123', {
         onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
         onInteraction: vi.fn(),
         onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
         onDone,
         onError: vi.fn(),
       });
@@ -128,8 +140,11 @@ describe('lib/api/medication', () => {
       const onError = vi.fn();
       await streamMedicationAnalysis('c1', 'metformin', null, 'ticket-123', {
         onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
         onInteraction: vi.fn(),
         onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
         onDone: vi.fn(),
         onError,
       });
@@ -147,8 +162,11 @@ describe('lib/api/medication', () => {
       const onDone = vi.fn();
       await streamMedicationAnalysis('c1', 'metformin', null, 'ticket-123', {
         onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
         onInteraction: vi.fn(),
         onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
         onDone,
         onError: vi.fn(),
       });
@@ -162,8 +180,11 @@ describe('lib/api/medication', () => {
       const onError = vi.fn();
       await streamMedicationAnalysis('c1', 'metformin', null, 'ticket-123', {
         onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
         onInteraction: vi.fn(),
         onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
         onDone: vi.fn(),
         onError,
       });
@@ -175,8 +196,11 @@ describe('lib/api/medication', () => {
       vi.mocked(fetch).mockResolvedValueOnce(sseResponse(''));
       await streamMedicationAnalysis('c1', 'metformin 500mg', null, 'my-ticket', {
         onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
         onInteraction: vi.fn(),
         onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
         onDone: vi.fn(),
         onError: vi.fn(),
       });
@@ -202,8 +226,11 @@ describe('lib/api/medication', () => {
         'my-ticket',
         {
           onMedication: vi.fn(),
+          onPreviousMedication: vi.fn(),
           onInteraction: vi.fn(),
           onRenal: vi.fn(),
+          onPip: vi.fn(),
+          onDiscrepancy: vi.fn(),
           onDone: vi.fn(),
           onError: vi.fn(),
         },
@@ -218,6 +245,128 @@ describe('lib/api/medication', () => {
           sex: 'male',
           serum_creatinine_mg_dl: 3.0,
           height_cm: 170,
+        }),
+      );
+    });
+
+    it('parses a previous_medication event into onPreviousMedication', async () => {
+      const medication = {
+        id: 'p1',
+        raw_text: 'metformin 500mg',
+        name: 'Metformin',
+        rxcui: '6809',
+        dose: '500mg',
+        route: null,
+        frequency: null,
+      };
+      const body = `event: previous_medication\ndata: ${JSON.stringify(medication)}\n\n`;
+      vi.mocked(fetch).mockResolvedValueOnce(sseResponse(body));
+
+      const onPreviousMedication = vi.fn();
+      await streamMedicationAnalysis('c1', 'metformin 1000mg', null, 'ticket-123', {
+        onMedication: vi.fn(),
+        onPreviousMedication,
+        onInteraction: vi.fn(),
+        onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      });
+
+      expect(onPreviousMedication).toHaveBeenCalledWith(medication);
+    });
+
+    it('parses a pip event into onPip', async () => {
+      const finding = {
+        id: 'pip1',
+        medication_id: 'm1',
+        source: 'beers_2023',
+        direction: 'avoid',
+        severity: 'major',
+        rule_id: 'beers_2023:CRIT-1',
+        drug_names: ['diphenhydramine'],
+        matched_condition: null,
+        explanation: 'AGS Beers Criteria 2023: avoid diphenhydramine.',
+        narrative: null,
+      };
+      const body = `event: pip\ndata: ${JSON.stringify(finding)}\n\n`;
+      vi.mocked(fetch).mockResolvedValueOnce(sseResponse(body));
+
+      const onPip = vi.fn();
+      await streamMedicationAnalysis('c1', 'diphenhydramine 25mg', null, 'ticket-123', {
+        onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
+        onInteraction: vi.fn(),
+        onRenal: vi.fn(),
+        onPip,
+        onDiscrepancy: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      });
+
+      expect(onPip).toHaveBeenCalledWith(finding);
+    });
+
+    it('parses a discrepancy event into onDiscrepancy', async () => {
+      const finding = {
+        id: 'd1',
+        kind: 'added',
+        current_medication_id: 'm1',
+        previous_medication_id: null,
+        rule_id: 'discrepancy:added',
+        explanation: 'Lisinopril appears in the current list but not the previous one.',
+        narrative: null,
+        provenance: { name: 'lisinopril', rxcui: null },
+      };
+      const body = `event: discrepancy\ndata: ${JSON.stringify(finding)}\n\n`;
+      vi.mocked(fetch).mockResolvedValueOnce(sseResponse(body));
+
+      const onDiscrepancy = vi.fn();
+      await streamMedicationAnalysis('c1', 'lisinopril 10mg', null, 'ticket-123', {
+        onMedication: vi.fn(),
+        onPreviousMedication: vi.fn(),
+        onInteraction: vi.fn(),
+        onRenal: vi.fn(),
+        onPip: vi.fn(),
+        onDiscrepancy,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      });
+
+      expect(onDiscrepancy).toHaveBeenCalledWith(finding);
+    });
+
+    it('includes conditions and previous_raw_text in the request body when supplied', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(sseResponse(''));
+      await streamMedicationAnalysis(
+        'c1',
+        'metformin 1000mg',
+        {
+          age_years: 78,
+          conditions: ['heart failure'],
+          previous_raw_text: 'metformin 500mg',
+        },
+        'my-ticket',
+        {
+          onMedication: vi.fn(),
+          onPreviousMedication: vi.fn(),
+          onInteraction: vi.fn(),
+          onRenal: vi.fn(),
+          onPip: vi.fn(),
+          onDiscrepancy: vi.fn(),
+          onDone: vi.fn(),
+          onError: vi.fn(),
+        },
+      );
+
+      const [, calledInit] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+      expect(calledInit.body).toBe(
+        JSON.stringify({
+          raw_text: 'metformin 1000mg',
+          age_years: 78,
+          conditions: ['heart failure'],
+          previous_raw_text: 'metformin 500mg',
         }),
       );
     });

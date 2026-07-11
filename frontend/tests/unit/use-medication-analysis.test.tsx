@@ -2,8 +2,10 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
+  DiscrepancyFinding,
   InteractionFinding,
   NormalizedMedication,
+  PipFinding,
   RenalFinding,
   StreamMedicationAnalysisCallbacks,
 } from '@/lib/api/medication';
@@ -52,6 +54,30 @@ const sampleRenalFinding: RenalFinding = {
   severity: 'major',
   rule_id: 'renal_threshold:apixaban',
   explanation: 'Both equations are below threshold.',
+};
+
+const samplePipFinding: PipFinding = {
+  id: 'pip1',
+  medication_id: 'm1',
+  source: 'beers_2023',
+  direction: 'avoid',
+  severity: 'major',
+  rule_id: 'beers_2023:CRIT-1',
+  drug_names: ['diphenhydramine'],
+  matched_condition: null,
+  explanation: 'AGS Beers Criteria 2023: avoid diphenhydramine.',
+  narrative: null,
+};
+
+const sampleDiscrepancyFinding: DiscrepancyFinding = {
+  id: 'd1',
+  kind: 'added',
+  current_medication_id: 'm1',
+  previous_medication_id: null,
+  rule_id: 'discrepancy:added',
+  explanation: 'Metformin appears in the current list but not the previous one.',
+  narrative: null,
+  provenance: { name: 'metformin', rxcui: null },
 };
 
 describe('useMedicationAnalysis', () => {
@@ -113,6 +139,42 @@ describe('useMedicationAnalysis', () => {
     expect(result.current.renalFindings).toEqual([sampleRenalFinding]);
   });
 
+  it('streams PIP findings into state', async () => {
+    vi.mocked(streamMedicationAnalysis).mockImplementation(
+      async (_chatId, _rawText, _params, _ticket, callbacks) => {
+        callbacks.onPip(samplePipFinding);
+        callbacks.onDone();
+      },
+    );
+
+    const { result } = renderHook(() => useMedicationAnalysis('c1'));
+
+    await act(async () => {
+      await result.current.analyze('diphenhydramine 25mg', { age_years: 78 });
+    });
+
+    expect(result.current.pipFindings).toEqual([samplePipFinding]);
+  });
+
+  it('streams previous-list medications and discrepancy findings into state', async () => {
+    vi.mocked(streamMedicationAnalysis).mockImplementation(
+      async (_chatId, _rawText, _params, _ticket, callbacks) => {
+        callbacks.onPreviousMedication(sampleMedication);
+        callbacks.onDiscrepancy(sampleDiscrepancyFinding);
+        callbacks.onDone();
+      },
+    );
+
+    const { result } = renderHook(() => useMedicationAnalysis('c1'));
+
+    await act(async () => {
+      await result.current.analyze('metformin 1000mg', { previous_raw_text: 'metformin 500mg' });
+    });
+
+    expect(result.current.previousMedications).toEqual([sampleMedication]);
+    expect(result.current.discrepancyFindings).toEqual([sampleDiscrepancyFinding]);
+  });
+
   it('transitions to the error state and surfaces the message on a degraded-mode error', async () => {
     vi.mocked(streamMedicationAnalysis).mockImplementation(
       async (_chatId, _rawText, _renalParams, _ticket, callbacks) => {
@@ -143,11 +205,14 @@ describe('useMedicationAnalysis', () => {
     expect(result.current.status).toBe('error');
   });
 
-  it('reset clears medications/findings/renalFindings and returns to idle', async () => {
+  it('reset clears all medication/finding state and returns to idle', async () => {
     vi.mocked(streamMedicationAnalysis).mockImplementation(
-      async (_chatId, _rawText, _renalParams, _ticket, callbacks) => {
+      async (_chatId, _rawText, _params, _ticket, callbacks) => {
         callbacks.onMedication(sampleMedication);
+        callbacks.onPreviousMedication(sampleMedication);
         callbacks.onRenal(sampleRenalFinding);
+        callbacks.onPip(samplePipFinding);
+        callbacks.onDiscrepancy(sampleDiscrepancyFinding);
         callbacks.onDone();
       },
     );
@@ -165,7 +230,10 @@ describe('useMedicationAnalysis', () => {
 
     expect(result.current.status).toBe('idle');
     expect(result.current.medications).toEqual([]);
+    expect(result.current.previousMedications).toEqual([]);
     expect(result.current.findings).toEqual([]);
     expect(result.current.renalFindings).toEqual([]);
+    expect(result.current.pipFindings).toEqual([]);
+    expect(result.current.discrepancyFindings).toEqual([]);
   });
 });

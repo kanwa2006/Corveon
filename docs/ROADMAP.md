@@ -156,7 +156,7 @@ contract. No application code. Self-review complete.
   severity tier).
 - ✅ API — `POST /chats/{id}/medications/analyze` (SSE, `medication`/`interaction`/`done`/`error`
   events, same stream-ticket bridge as `/verify`) returning `{normalized[], interactions[]}`;
-  `pip_flags[]`/`discrepancies[]` are later phases below, not stubbed.
+  renal/PIP/discrepancy events are added in Phase 2/Phase 3 below on this same endpoint.
 - ✅ Frontend — a medication-list input + streamed results panel
   (`components/chats/medication-panel.tsx`) on the chat detail page, mirroring the Evidence
   Verification UI's established pattern.
@@ -188,9 +188,38 @@ contract. No application code. Self-review complete.
   and Playwright e2e coverage (reusable fixtures for the interacting-pair and impaired-renal-params
   test inputs, `tests/e2e/fixtures/medications.ts`).
 
+### Phase 3 — PIP screening + discrepancy classification + guardrailed narrative ✅
+- ✅ Data model: `pip_criteria` (migration `0008`) — shared reference data (like `drug_interactions`),
+  FK to `drug_data_snapshots`, one row per Beers 2023/STOPP/START v3 criterion; `medication_findings.
+  medication_a_id` made nullable — a START-criterion finding flags a medication *absent* from the
+  current list, with no medication row to anchor to ([ADR-0019](adr/0019-pip-criteria-encoding.md)).
+- ✅ Beers 2023 + STOPP/START v3 pinned, checksummed snapshot loader (`app/medication/pip_loader.py`,
+  same pinned-snapshot pattern as DDInter) — the real, copyrighted criteria tables aren't bundled;
+  an operator transcribes the published criteria into the loader's CSV shape.
+- ✅ PIP screening engine (`app/medication/pip_screening.py`, deterministic, no LLM) — age ≥65 gate;
+  AVOID criteria match on drug presence (+ condition keyword match when condition-gated); START
+  criteria match on drug *absence* given a matching condition.
+- ✅ Discrepancy classification engine (`app/medication/discrepancy.py`, deterministic, no LLM) —
+  RxCUI-first, name-fallback diff between two independently parsed/normalized medication lists,
+  producing `added`/`omitted`/`dose_changed`/`frequency_changed` findings.
+- ✅ Guardrailed LLM narrative (`app/medication/explanation_guardrail.py`,
+  [ADR-0020](adr/0020-guardrailed-explanation-narrative.md)) — one batched call proposes a
+  plain-language narrative per PIP/discrepancy finding; a deterministic post-generation check
+  (`check_narrative_grounded`) discards any narrative introducing a medication name outside the
+  finding's own set, a number, an escalation word, or a clinical directive absent from the finding's
+  own data. Scoped to Phase 3 finding types only — Phase 1/2 explanations are already deterministic
+  strings with nothing for a guardrail to check.
+- ✅ API — `age_years` (independent of the renal-only fields) triggers PIP screening; `conditions[]`
+  supplies free-text diagnoses; `previous_raw_text` triggers discrepancy classification against
+  `raw_text`. New SSE events on the same `/medications/analyze` stream: `previous_medication`, `pip`,
+  `discrepancy` — no new endpoint.
+- ✅ Frontend — PIP-screening and previous-medication-list input sections, `PipFindingCard`/
+  `DiscrepancyFindingCard`, and a distinctly-styled narrative note in the existing medication panel.
+- ✅ Tests written alongside each feature — golden tests for PIP screening/discrepancy/guardrail,
+  loader tests, API tests, frontend unit/component tests, and Playwright e2e coverage (reusable
+  fixtures for PIP-screening and previous-list test inputs).
+
 ### Later phases — not yet implemented
-- **Beers 2023** + **STOPP/START v3** screens; medication-discrepancy classification.
-- Guardrailed LLM explanations (no ungrounded facts).
 - Multi-agent depth; enterprise path (Qdrant option, SSO, read replicas, on-prem/Ollama).
 - Accessibility + performance audits; reproducible snapshot automation.
 

@@ -24,3 +24,19 @@ export const IMPAIRED_RENAL_PARAMETERS = {
   serumCreatinineMgDl: '3.0',
   heightCm: '170',
 };
+
+/** A single medication for PIP screening (Beers 2023 + STOPP/START v3,
+ * ADR-0019) — the age/condition pair alone is enough to trigger the check,
+ * independent of renal parameters. */
+export const PIP_SCREENING_MEDICATION_LIST = 'diphenhydramine 25mg nightly';
+
+export const PIP_SCREENING_PARAMETERS = {
+  ageYears: '78',
+  conditions: 'insomnia',
+};
+
+/** Two medication lists for discrepancy classification (ADR-0019) — a
+ * dose change plus an added medication between "previous" and "current". */
+export const PREVIOUS_MEDICATION_LIST = 'metformin 500mg once daily';
+export const CURRENT_MEDICATION_LIST_WITH_DISCREPANCY =
+  'metformin 1000mg once daily\nlisinopril 10mg once daily';

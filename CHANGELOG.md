@@ -79,6 +79,51 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
     absent when omitted, `422` on a partial set), frontend unit/component tests, and new Playwright
     e2e coverage using reusable fixtures (`tests/e2e/fixtures/medications.ts`) rather than inline
     ad-hoc test strings.
+- **Medication-Safety Engine, Phase 3: PIP screening + discrepancy classification + guardrailed
+  narrative** (Roadmap Month 6-12, ADR-0019/ADR-0020): extends the existing
+  `POST /chats/{id}/medications/analyze` endpoint (no new endpoint) with potentially-inappropriate-
+  prescribing screening (AGS Beers Criteria 2023 + STOPP/START v3), a diff between the request's
+  current and an optional previous medication list, and an optional guardrail-checked LLM narrative
+  layered on those two new finding types.
+  - Data model: `pip_criteria` (migration `0008`) — shared reference data (like `drug_interactions`),
+    FK'd to the existing `drug_data_snapshots`; `medication_findings.medication_a_id` made nullable,
+    since a START-criterion finding flags a medication *absent* from the current list and has no
+    medication row to anchor to (ADR-0019).
+  - Beers 2023 + STOPP/START v3 pinned, checksummed snapshot loader
+    (`app/medication/pip_loader.py`) — same pattern as DDInter (ADR-0018): never fetched at request
+    time, the real copyrighted criteria tables aren't bundled; dev/test uses a small, explicitly
+    synthetic fixture structurally representative of the real row shape.
+  - PIP screening engine (`app/medication/pip_screening.py`, deterministic, no LLM) — age ≥65 gate;
+    AVOID criteria (every Beers row, condition-gated STOPP rows) match on drug presence (+ a
+    case-insensitive substring match against a supplied free-text condition when condition-gated);
+    START criteria match on drug **absence** given a matching condition.
+  - Discrepancy classification engine (`app/medication/discrepancy.py`, deterministic, no LLM) —
+    RxCUI-first, normalized-name-fallback diff between two independently parsed/normalized
+    medication lists, producing `added`/`omitted`/`dose_changed`/`frequency_changed` findings.
+  - Guardrailed LLM narrative (`app/medication/explanation_guardrail.py`, ADR-0020) — one batched
+    call (not one per finding) proposes a plain-language narrative for every PIP/discrepancy finding
+    from that finding's own structured rule-output; a deterministic post-generation check
+    (`check_narrative_grounded`) discards any narrative introducing a medication name outside the
+    finding's own set, a number absent from the finding's own data, an escalation/severity word, or
+    an unlicensed clinical-directive phrase not already in the finding's own explanation. Scoped to
+    Phase 3 finding types only — Phase 1/2 `explanation` fields are already deterministic strings
+    with nothing for a guardrail to check, so retrofitting it there would touch already-shipped,
+    already-tested code for no safety benefit. Degrades silently (no narrative, not an error) when
+    no provider is available or the budget is exhausted; the deterministic `explanation` is always
+    shown regardless.
+  - API: `age_years` alone (independent of the four renal-only fields) now triggers PIP screening;
+    a new `conditions[]` field supplies free-text diagnoses; a new `previous_raw_text` field
+    triggers discrepancy classification against `raw_text`. Three new SSE events on the same stream:
+    `previous_medication`, `pip`, `discrepancy`.
+  - Frontend: PIP-screening and previous-medication-list input sections, `PipFindingCard`/
+    `DiscrepancyFindingCard`, and a distinctly-styled (italic, sparkle icon) narrative note in the
+    existing medication panel — no new page.
+  - Tests written alongside each feature: golden tests for PIP screening (age gate, unconditional/
+    condition-gated AVOID, START omission, case-insensitivity) and discrepancy classification
+    (added/omitted/dose/frequency changes, RxCUI vs. name matching, duplicate-entry handling),
+    guardrail unit tests (grounded pass, cross-drug/number/escalation/directive-phrase failures,
+    degraded-mode fallback), loader tests, API tests, frontend unit/component tests, and new
+    Playwright e2e coverage using reusable fixtures.
 - **Blueprint reconciliation** (Roadmap Month 1 closeout): saved the master implementation
   blueprint verbatim to `docs/specifications/corveon-master-implementation-blueprint-v1.0.md` as the
   permanent in-repo reference, then closed every concrete gap the reconciliation against the current

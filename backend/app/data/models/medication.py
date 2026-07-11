@@ -1,16 +1,19 @@
 """Medication-Safety Engine data model (blueprint §9, §10.1) — normalization
 + drug-drug interaction detection (Phase 1), renal/dose checks (Phase 2,
-ADR-0005). Every table carries ``chat_id``, the isolation anchor (§5),
-matching every other content-bearing table in this codebase.
+ADR-0005), PIP screening (Beers 2023 + STOPP/START v3) + discrepancy
+classification (Phase 3, ADR-0019). Every chat-scoped table carries
+``chat_id``, the isolation anchor (§5), matching every other content-bearing
+table in this codebase.
 
 ``medication_findings`` augments the blueprint's minimal ``(chat_id, type,
 severity, source, rule_id, explanation, provenance)`` shape with two
 nullable medication foreign keys — the blueprint's own schema otherwise
 leaves a finding with no way to say which medications it concerns, which
 would make an ``interaction`` finding unusable. ``medication_a_id`` is
-always populated; ``medication_b_id`` is populated for pairwise finding
-types (interaction) and left null for single-medication types a later
-phase adds (renal, PIP)."""
+populated for every finding type except a START-criterion PIP finding
+(ADR-0019), which flags a *missing* medication and so has no medication row
+to anchor to; ``medication_b_id`` is populated for pairwise finding types
+(interaction; discrepancy dose/frequency changes) and left null otherwise."""
 
 from __future__ import annotations
 
@@ -27,10 +30,9 @@ from app.data.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
 
 
 class FindingType(StrEnum):
-    """Finding categories (blueprint §9) — only INTERACTION is produced in
-    this phase; RENAL/PIP/DISCREPANCY are real, reserved values later
-    phases (dual renal equations, Beers/STOPP-START, discrepancy diff)
-    will produce, not placeholders."""
+    """Finding categories (blueprint §9). INTERACTION (Phase 1) and RENAL
+    (Phase 2) are formula/lookup-derived; PIP (Beers 2023 + STOPP/START v3)
+    and DISCREPANCY (two-list diff) are Phase 3, ADR-0019."""
 
     INTERACTION = "interaction"
     RENAL = "renal"
@@ -60,6 +62,24 @@ class InteractionSource(StrEnum):
     DDINTER = "ddinter"
     OPENFDA_LABEL = "openfda_label"
     CALCULATED = "calculated"
+
+
+class PipSource(StrEnum):
+    """Which PIP criteria set a ``PipCriterion`` row came from (ADR-0019)."""
+
+    BEERS_2023 = "beers_2023"
+    STOPP_V3 = "stopp_v3"
+    START_V3 = "start_v3"
+
+
+class PipDirection(StrEnum):
+    """Whether a criterion flags a drug the patient *has* (AVOID — every
+    Beers row, and STOPP's condition-gated rows) or a drug the patient
+    *lacks* given a matching condition (START_CONSIDER — an omission,
+    ADR-0019)."""
+
+    AVOID = "avoid"
+    START_CONSIDER = "start_consider"
 
 
 def _enum_column(enum_cls: type[StrEnum], name: str) -> SAEnum:
@@ -103,8 +123,8 @@ class MedicationFinding(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     chat_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("chats.id", ondelete="CASCADE"), nullable=False
     )
-    medication_a_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("medications.id", ondelete="CASCADE"), nullable=False
+    medication_a_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("medications.id", ondelete="CASCADE"), nullable=True
     )
     medication_b_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("medications.id", ondelete="CASCADE"), nullable=True
@@ -159,3 +179,35 @@ class DrugInteraction(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         _enum_column(FindingSeverity, "medication_finding_severity"), nullable=False
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class PipCriterion(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
+    """One Beers 2023 or STOPP/START v3 criterion from an imported snapshot
+    (ADR-0019) — shared reference data (not chat-scoped, no RLS, like
+    ``DrugInteraction``). ``drug_names`` and ``condition_keywords`` are
+    normalized (lowercased, trimmed) lists; an empty ``condition_keywords``
+    means the criterion is unconditional (most Beers rows: "avoid in older
+    adults" regardless of diagnosis). ``direction=start_consider`` (START)
+    criteria are matched by *absence* of any ``drug_names`` entry, not
+    presence — see app/medication/pip_screening.py."""
+
+    __tablename__ = "pip_criteria"
+    __table_args__ = (Index("ix_pip_criteria_snapshot_id", "snapshot_id"),)
+
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("drug_data_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
+    source: Mapped[PipSource] = mapped_column(
+        _enum_column(PipSource, "pip_criterion_source"), nullable=False
+    )
+    criterion_id: Mapped[str] = mapped_column(nullable=False)
+    drug_names: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    condition_keywords: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    direction: Mapped[PipDirection] = mapped_column(
+        _enum_column(PipDirection, "pip_criterion_direction"), nullable=False
+    )
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    recommendation: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[FindingSeverity] = mapped_column(
+        _enum_column(FindingSeverity, "medication_finding_severity"), nullable=False
+    )
