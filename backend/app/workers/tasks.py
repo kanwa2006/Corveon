@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings
 from app.core.logging import get_logger
 from app.core.storage import ObjectNotFoundError, ObjectStorage
 from app.core.tracing import get_tracer
@@ -36,6 +37,7 @@ from app.ingestion.parsing import (
     UnsupportedDocumentTypeError,
     parse_document,
 )
+from app.medication.snapshot_sync import sync_all_pinned_snapshots
 
 logger = get_logger(__name__)
 tracer = get_tracer(__name__)
@@ -259,4 +261,22 @@ async def reindex_chat_chunks(
         )
         await session.commit()
         logger.info("reindex_complete", chat_id=chat_id, model_id=model_id, chunk_count=len(chunks))
+        break
+
+
+async def sync_pinned_snapshots(ctx: dict[str, Any]) -> None:
+    """Reproducibly (re)imports every pinned drug-data snapshot source this
+    deployment has configured a local path for (DDInter 2.0, Beers 2023,
+    STOPP/START v3 — `app/medication/snapshot_sync.py`, blueprint §10.4).
+    Idempotent: a source already imported at its pinned version+checksum is
+    left untouched, so this is safe to enqueue repeatedly (a deploy step, a
+    manual trigger) without ever re-importing or duplicating a snapshot."""
+    settings: Settings = ctx["settings"]
+    db: Database = ctx["db"]
+    async for session in db.session():
+        results = await sync_all_pinned_snapshots(session, settings)
+        await session.commit()
+        for result in results:
+            logger.info("snapshot_sync_result", **result.as_dict())
+        break
         break

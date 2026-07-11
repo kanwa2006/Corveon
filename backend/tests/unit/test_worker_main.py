@@ -14,6 +14,7 @@ from app.workers.tasks import (
     delete_storage_objects,
     ingest_document,
     reindex_chat_chunks,
+    sync_pinned_snapshots,
 )
 
 pytestmark = pytest.mark.unit
@@ -24,6 +25,7 @@ def test_worker_settings_registers_ingest_document() -> None:
         ingest_document,
         delete_storage_objects,
         reindex_chat_chunks,
+        sync_pinned_snapshots,
     ]
 
 

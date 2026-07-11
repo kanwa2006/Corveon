@@ -87,7 +87,18 @@ table (ADR-0017); `EVIDENCE_CACHE_TTL_SECONDS` controls how long.
 ## Medication-Safety Engine
 | Var | Default | Meaning |
 |---|---|---|
-| `DDINTER_SNAPSHOT_PATH` | — (blank) | Optional local path to an operator-provisioned DDInter 2.0 CSV export, imported via `python -m app.medication.ddinter_loader` (see [`data/loaders/README.md`](../data/loaders/README.md), [ADR-0018](adr/0018-ddinter-loader-location-and-no-bundled-dataset.md)) — never fetched at request time. Blank means no snapshot imported yet; the DDI rules engine falls back solely to the live openFDA label check for that request (absence is normal, same posture as an unconfigured AI provider, §23.1). RxNorm normalization (`RXNAV_BASE_URL`/`RXNAV_MAX_RPS`) and the openFDA DDI fallback (`OPENFDA_API_KEY`/`OPENFDA_BASE_URL`/`OPENFDA_MAX_RPM`) reuse the same settings already listed under External medical APIs above. |
+| `DDINTER_SNAPSHOT_PATH` | — (blank) | Optional local path to an operator-provisioned DDInter 2.0 CSV export — never fetched at request time. Blank means no snapshot imported yet; the DDI rules engine falls back solely to the live openFDA label check for that request (absence is normal, same posture as an unconfigured AI provider, §23.1). |
+| `DDINTER_SNAPSHOT_VERSION` | — (blank) | Version label recorded on the imported snapshot (e.g. `2025-01`). Required together with `DDINTER_SNAPSHOT_PATH` — a path set without a version is a configuration error, not a silent skip. |
+| `BEERS_2023_SNAPSHOT_PATH` / `BEERS_2023_SNAPSHOT_VERSION` | — (blank) | Same shape as the DDInter pair, for the AGS Beers Criteria 2023 PIP-screening snapshot. |
+| `STOPP_START_V3_SNAPSHOT_PATH` / `STOPP_START_V3_SNAPSHOT_VERSION` | — (blank) | Same shape as the DDInter pair, for the STOPP/START v3 PIP-screening snapshot. |
+
+Every `*_SNAPSHOT_PATH`/`*_SNAPSHOT_VERSION` pair above is read by
+`app/medication/snapshot_sync.py` (ADR-0019), which reproducibly (re)imports each configured source
+— idempotent, safe to run repeatedly — either via `python -m app.medication.snapshot_sync` or the
+`sync_pinned_snapshots` ARQ worker task; see [`data/loaders/README.md`](../data/loaders/README.md).
+RxNorm normalization (`RXNAV_BASE_URL`/`RXNAV_MAX_RPS`) and the openFDA DDI fallback
+(`OPENFDA_API_KEY`/`OPENFDA_BASE_URL`/`OPENFDA_MAX_RPM`) reuse the same settings already listed under
+External medical APIs above.
 
 ## Observability
 | Var | Meaning |

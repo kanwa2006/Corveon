@@ -53,3 +53,20 @@ cell meaning the criterion is unconditional; `direction` one of `avoid`/`start_c
 RxNorm's monthly release loader is a later Medication-Safety Engine phase (see
 [../../docs/ROADMAP.md](../../docs/ROADMAP.md)) — not yet implemented; normalization currently goes
 through the live RxNav API (`app/medication/rxnorm_client.py`), not a pinned snapshot.
+
+## Automated sync (reproducible across deploys)
+Running each loader above by hand, with a manually re-typed `--version` every time, doesn't scale
+past a one-off local import. `app/medication/snapshot_sync.py` (ADR-0019) wires a `*_SNAPSHOT_PATH`/
+`*_SNAPSHOT_VERSION` environment-variable pair per source (`docs/ENVIRONMENT.md`) to the same
+loaders above, and is **idempotent** — safe to run on every deploy or as a recurring worker trigger,
+never re-importing (or duplicating) a source already present at its pinned version + checksum:
+```
+DATABASE_URL=... DDINTER_SNAPSHOT_PATH=... DDINTER_SNAPSHOT_VERSION=2025-01 \
+    BEERS_2023_SNAPSHOT_PATH=... BEERS_2023_SNAPSHOT_VERSION=2023 \
+    python -m app.medication.snapshot_sync
+```
+A source with no configured path is reported `not_configured` (an absence, not a failure — same
+posture as an unconfigured AI provider, §23.1); a configured path with no paired version raises
+loudly rather than importing under an inferred/ambiguous label. The same logic runs as the
+`sync_pinned_snapshots` ARQ worker task (`app/workers/tasks.py`) for triggering from a deploy
+pipeline instead of a shell.

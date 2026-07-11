@@ -17,7 +17,12 @@ from app.core.logging import configure_logging, get_logger
 from app.core.storage import create_object_storage
 from app.data.base import Database
 from app.ingestion.embeddings import get_embedding_model
-from app.workers.tasks import delete_storage_objects, ingest_document, reindex_chat_chunks
+from app.workers.tasks import (
+    delete_storage_objects,
+    ingest_document,
+    reindex_chat_chunks,
+    sync_pinned_snapshots,
+)
 
 logger = get_logger(__name__)
 
@@ -44,6 +49,7 @@ class WorkerSettings:
         ingest_document,
         delete_storage_objects,
         reindex_chat_chunks,
+        sync_pinned_snapshots,
     ]
     on_startup = on_startup
     on_shutdown = on_shutdown
