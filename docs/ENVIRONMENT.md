@@ -31,6 +31,7 @@ come from the environment only — never code, never the database.
 | `DATABASE_URL` | `postgresql+asyncpg://…` | async DSN |
 | `DATABASE_POOL_SIZE` / `DATABASE_MAX_OVERFLOW` | `10` / `5` | connection pool |
 | `DB_ENABLE_RLS` | `true` | enable Row-Level Security on `chat_id`/`user_id` |
+| `DATABASE_READ_REPLICA_URL` | — | optional read replica (ADR-0023); unset = every read stays on the primary |
 
 ## Redis (cache + ARQ)
 | Var | Default | Meaning |

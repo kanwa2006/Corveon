@@ -59,6 +59,24 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
   - Tests: `build_vector_store` backend-selection unit tests, `QdrantStore` adapter unit tests
     (mocked `AsyncQdrantClient` — payload filter shape, cosine-score-to-distance conversion,
     collection/payload-index bootstrap, scroll pagination), `Settings` validator tests.
+- **Enterprise path: Postgres read-replica option** (Roadmap, ADR-0023): pure-read endpoints can now
+  read from an optional read replica instead of the primary — unset by default, zero behavior
+  change for every deployment that doesn't configure one.
+  - `Database` (`app/data/base.py`) optionally builds a second engine + session factory for
+    `DATABASE_READ_REPLICA_URL`; the new `replica_session()`/`ping_replica()`/`has_read_replica`
+    fall back to the primary when no replica is configured, so every one of `Database`'s existing
+    construction sites (API, worker, CLI loaders) needed zero changes.
+  - New `ReadOnlyDbDep`/`ReadOnlyRlsDbDep` (`app/api/deps.py`) mirror `DbDep`/`RlsDbDep` exactly,
+    including a fresh `set_rls_user` call on the replica session — the RLS GUC is per-connection
+    session state, never replicated between physical connections (ADR-0013), so a replica session
+    needs the identical per-request setup a primary session gets.
+  - `POST /chats/{id}/search` — the one existing endpoint that is purely a read — now uses
+    `ReadOnlyRlsDbDep`. `GET /ready` additionally pings the replica when configured.
+  - New setting: `DATABASE_READ_REPLICA_URL` (unset = normal, valid state). No Postgres schema
+    change; no Alembic migration.
+  - Tests: `Database` replica-plumbing tests, an integration test proving the RLS GUC is genuinely
+    not shared between a primary and a replica session (fails closed without its own
+    `set_rls_user` call, exactly like an unset primary session), `Settings` field tests.
 
 ### Fixed
 - **WCAG AA color-contrast failures** (Roadmap — accessibility + performance audit): a systematic

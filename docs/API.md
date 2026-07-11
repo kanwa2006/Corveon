@@ -53,7 +53,9 @@ runs in the ARQ ingestion worker (`app/workers/tasks.py`), never inline in the r
 
 ## Search
 Implemented Week 1. Backed by a pluggable vector store — pgvector by default, or Qdrant when
-`VECTOR_STORE=qdrant` (ADR-0022) — transparent to this contract either way.
+`VECTOR_STORE=qdrant` (ADR-0022) — transparent to this contract either way. Reads from the Postgres
+read replica when `DATABASE_READ_REPLICA_URL` is configured, the primary otherwise (ADR-0023) —
+also transparent to this contract.
 | Method | Path | Result |
 |---|---|---|
 | POST | `/chats/{id}/search` | `200 [hit]` — semantic, **in-chat only**; filters by both `chat_id` and embedding `model_id` (ADR-0008) |
@@ -98,7 +100,7 @@ finding types (Phase 3, ADR-0019/ADR-0020) — see `docs/ARCHITECTURE.md` §Medi
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | liveness |
-| GET | `/ready` | readiness (DB / Redis / provider readiness) |
+| GET | `/ready` | readiness (DB / Redis / provider readiness); adds a `database_replica` check when `DATABASE_READ_REPLICA_URL` is configured (ADR-0023) |
 
 ## Notes
 - `source_class` ∈ `{uploaded_document, verified_public, org_trusted, ai_reasoning,

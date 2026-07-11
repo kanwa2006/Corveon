@@ -99,3 +99,23 @@ def test_settings_accepts_qdrant_vector_store_with_a_url() -> None:
     )
     assert settings.VECTOR_STORE == "qdrant"
     assert settings.QDRANT_URL == "http://localhost:6333"
+
+
+@pytest.mark.unit
+def test_settings_has_no_read_replica_by_default() -> None:
+    settings = Settings(
+        JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+    )
+    # ADR-0023: unset is a normal, valid state — reads fall back to the primary.
+    assert settings.DATABASE_READ_REPLICA_URL is None
+
+
+@pytest.mark.unit
+def test_settings_accepts_a_read_replica_url() -> None:
+    settings = Settings(
+        JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+        DATABASE_READ_REPLICA_URL="postgresql+asyncpg://user:pass@replica-host/db",
+    )
+    assert settings.DATABASE_READ_REPLICA_URL == "postgresql+asyncpg://user:pass@replica-host/db"

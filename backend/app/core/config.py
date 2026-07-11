@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 5
     DB_ENABLE_RLS: bool = True
+    # Optional read-replica for pure-read endpoints (ADR-0023). Unset is a
+    # normal, valid state — every read falls back to the primary, same
+    # posture as every other optional subsystem (§23.1).
+    DATABASE_READ_REPLICA_URL: str | None = None
 
     # ── Redis (cache + ARQ) ───────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"

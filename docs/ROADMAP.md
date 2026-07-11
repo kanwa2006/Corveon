@@ -291,8 +291,24 @@ contract. No application code. Self-review complete.
   pagination), `Settings` cross-field validation (`QDRANT_URL` required when selected).
 - SSO, read replicas, and on-prem/Ollama hardening remain future work.
 
+### Enterprise path — Postgres read-replica option ✅
+- ✅ `Database` (`app/data/base.py`, ADR-0023) optionally owns a second engine + session factory
+  for a read replica, built only when `DATABASE_READ_REPLICA_URL` is set; `replica_session()`
+  falls back to the primary factory when it isn't — zero behavior change for every deployment that
+  leaves it unset.
+- ✅ New `ReadOnlyDbDep`/`ReadOnlyRlsDbDep` (`app/api/deps.py`) mirror `DbDep`/`RlsDbDep` exactly,
+  including re-applying `set_rls_user` on the replica session — the RLS GUC is per-connection
+  session state, never replicated (ADR-0013), so a replica session needs the identical per-request
+  setup a primary session gets.
+- ✅ `POST /chats/{id}/search` — the one existing endpoint that is purely a read — now uses
+  `ReadOnlyRlsDbDep`; `GET /ready` additionally pings the replica when configured.
+- ✅ Tests: `Database` replica-plumbing tests (engine/session-factory construction, `has_read_replica`,
+  `ping`/`ping_replica`), an integration test proving the RLS GUC is genuinely not shared between a
+  primary and a replica session, `Settings` field tests.
+- SSO and on-prem/Ollama hardening remain future work.
+
 ### Later phases — not yet implemented
-- SSO, read replicas, on-prem/Ollama hardening (remaining "Enterprise path" items).
+- SSO, on-prem/Ollama hardening (remaining "Enterprise path" items).
 
 ## Cross-cutting, always-on
 Per-feature Definition of Done · docs updated per PR · ADR per resolved decision · golden tests for
