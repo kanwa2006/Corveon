@@ -85,7 +85,17 @@ class RxNormClient:
 
     async def _fetch_from_api(self, name: str) -> dict[str, object] | None:
         async with httpx.AsyncClient(timeout=10.0, transport=self._transport) as client:
-            response = await client.get(f"{self._base_url}/drugs.json", params={"name": name})
+            exact = await self._fetch_exact(client, name)
+            if exact is not None:
+                return exact
+            # getDrugs only resolves correctly-spelled names; blueprint §9
+            # requires typo tolerance via getApproximateMatch, otherwise a
+            # misspelled drug never normalizes and silently produces no
+            # DDI/renal/PIP findings downstream.
+            return await self._fetch_approximate(client, name)
+
+    async def _fetch_exact(self, client: httpx.AsyncClient, name: str) -> dict[str, object] | None:
+        response = await client.get(f"{self._base_url}/drugs.json", params={"name": name})
         if response.status_code >= 400:
             return None
 
@@ -97,4 +107,42 @@ class RxNormClient:
                 concept_name = prop.get("name")
                 if rxcui and concept_name:
                     return {"rxcui": rxcui, "canonical_name": concept_name}
+        return None
+
+    async def _fetch_approximate(
+        self, client: httpx.AsyncClient, name: str
+    ) -> dict[str, object] | None:
+        response = await client.get(
+            f"{self._base_url}/approximateTerm.json", params={"term": name, "maxEntries": 1}
+        )
+        if response.status_code >= 400:
+            return None
+
+        data = response.json()
+        candidates = data.get("approximateGroup", {}).get("candidate") or []
+        for candidate in candidates:
+            rxcui = candidate.get("rxcui")
+            if not rxcui:
+                continue
+            canonical_name = candidate.get("name") or await self._fetch_rxcui_name(client, rxcui)
+            if canonical_name:
+                return {"rxcui": rxcui, "canonical_name": canonical_name}
+        return None
+
+    async def _fetch_rxcui_name(self, client: httpx.AsyncClient, rxcui: str) -> str | None:
+        """Older RxNav approximateTerm candidates omit ``name`` — resolve it
+        from the concept's own properties; without a canonical name the match
+        is useless to DDInter (keyed on canonical names), so an unresolvable
+        one is treated as no match."""
+        response = await client.get(
+            f"{self._base_url}/rxcui/{rxcui}/property.json", params={"propName": "RxNorm Name"}
+        )
+        if response.status_code >= 400:
+            return None
+
+        data = response.json()
+        for prop in data.get("propConceptGroup", {}).get("propConcept") or []:
+            value = prop.get("propValue")
+            if value:
+                return str(value)
         return None

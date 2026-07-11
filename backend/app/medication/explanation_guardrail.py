@@ -37,6 +37,10 @@ _ESCALATION_WORDS = (
     "severe",
     "critical",
     "dangerous",
+    "hazardous",
+    "harmful",
+    "lethal",
+    "risky",
     "life-threatening",
     "life threatening",
     "emergency",
@@ -58,6 +62,17 @@ _DIRECTIVE_PHRASES = (
     "reduce the dose",
     "raise the dose",
     "change the dose",
+    # Broad single-word stems: any avoid/monitor/consult-style instruction
+    # must come from the rule output, not the LLM ("avoid entirely" and
+    # "monitor closely" bypassed the original phrase list). Substring
+    # matching keeps this safe-side: an over-broad hit only discards a
+    # narrative, never shows one.
+    "avoid",
+    "monitor",
+    "consult",
+    "do not take",
+    "must not",
+    "should not",
 )
 
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
@@ -97,8 +112,11 @@ def check_narrative_grounded(
         if drug_name and drug_name in lowered:
             return False
 
+    # Compare whole extracted numbers, never substrings — "20" must not be
+    # licensed by "2023" appearing somewhere in the rule output.
+    allowed_numbers = set(_NUMBER_RE.findall(allowed_lowered))
     for number in _NUMBER_RE.findall(lowered):
-        if number not in allowed_lowered:
+        if number not in allowed_numbers:
             return False
 
     for word in _ESCALATION_WORDS:

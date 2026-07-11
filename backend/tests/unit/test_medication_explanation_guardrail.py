@@ -123,6 +123,66 @@ def test_check_narrative_grounded_allows_a_directive_phrase_already_in_the_sourc
     )
 
 
+def test_check_narrative_grounded_fails_on_a_number_that_is_a_substring_of_an_allowed_one() -> None:
+    """Regression: the number check must match whole numbers, not
+    substrings — a fabricated "20 mg" used to pass because "20" is a
+    substring of "2023" in the finding's explanation."""
+    fact = _fact()
+    narrative = "A 20 mg dose of diphenhydramine carries anticholinergic burden."
+    assert not check_narrative_grounded(
+        narrative,
+        allowed_text=" ".join([fact.rationale, fact.recommendation, fact.explanation]),
+        other_drug_names=set(),
+    )
+
+
+def test_check_narrative_grounded_passes_a_number_faithfully_restated_from_the_source() -> None:
+    fact = _fact()
+    narrative = "The AGS Beers Criteria 2023 advise avoiding diphenhydramine in older adults."
+    assert check_narrative_grounded(
+        narrative,
+        allowed_text=" ".join([fact.rationale, fact.recommendation, fact.explanation]),
+        other_drug_names=set(),
+    )
+
+
+def test_check_narrative_grounded_fails_on_an_escalation_synonym_not_in_the_source() -> None:
+    """Regression: "hazardous" used to bypass the escalation-word list."""
+    fact = _fact()
+    narrative = "Combining these medications is hazardous for older adults."
+    assert not check_narrative_grounded(
+        narrative,
+        allowed_text=" ".join([fact.rationale, fact.recommendation, fact.explanation]),
+        other_drug_names=set(),
+    )
+
+
+def test_check_narrative_grounded_fails_on_an_avoid_directive_not_in_the_source() -> None:
+    """Regression: "avoid entirely" used to bypass the directive list."""
+    fact = _fact(
+        rationale="Anticholinergic burden in older adults.",
+        recommendation="Review therapy at the next visit.",
+        explanation="AGS Beers Criteria: anticholinergic burden in older adults.",
+    )
+    narrative = "Avoid this medication entirely."
+    assert not check_narrative_grounded(
+        narrative,
+        allowed_text=" ".join([fact.rationale, fact.recommendation, fact.explanation]),
+        other_drug_names=set(),
+    )
+
+
+def test_check_narrative_grounded_fails_on_a_monitoring_directive_not_in_the_source() -> None:
+    """Regression: "monitor closely" used to bypass the directive list."""
+    fact = _fact()
+    narrative = "Monitor closely for anticholinergic side effects."
+    assert not check_narrative_grounded(
+        narrative,
+        allowed_text=" ".join([fact.rationale, fact.recommendation, fact.explanation]),
+        other_drug_names=set(),
+    )
+
+
 # ── generate_grounded_narratives ────────────────────────────────────────
 
 
