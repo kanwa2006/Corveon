@@ -22,6 +22,8 @@ schema and kept honest by contract tests (schemathesis).
 | POST | `/auth/logout` | `204` |
 | GET | `/auth/me` | `200 {user}` — added during Week 1 implementation: the frontend needs a way to fetch the authenticated user's profile, which `/login` (tokens only) doesn't provide. Requires a valid bearer access token. |
 | POST | `/auth/stream-ticket` | `200 {ticket}` — added during Week 1 (ADR-0016): a 60-second single-purpose credential the browser passes as `?ticket=` to open the two SSE endpoints below directly against the backend (ADR-0007), since the httpOnly session cookie can't cross origins and `EventSource` can't attach a custom header. Requires a valid bearer access token to mint. |
+| POST | `/auth/sso/start` `{email}` | `200 {redirect_url}` — added by ADR-0025 (Enterprise SSO, OIDC only). Looks up the org's SSO config by the email's domain; `404` if none configured or inactive. Unauthenticated (the user isn't logged in yet). |
+| GET | `/auth/sso/callback?code=&state=` | `200 {access, refresh}` — the IdP redirects the browser here after authentication. Verifies `state` (single-use, Redis, 300s TTL), exchanges `code` for tokens (PKCE), verifies the `id_token` via the IdP's JWKS, then JIT-provisions or looks up the user by email and mints a session identical in shape to `/auth/login`. `403` if an existing user with that email belongs to a different org (never silently reassigns `org_id`); `401` on an invalid/expired/replayed `state` or an inactive user. |
 
 ## Chats
 | Method | Path | Result |
@@ -84,6 +86,15 @@ finding types (Phase 3, ADR-0019/ADR-0020) — see `docs/ARCHITECTURE.md` §Medi
 | Method | Path |
 |---|---|
 | POST / GET / DELETE | `/org/trusted-sources` |
+
+## Org SSO (ADR-0025)
+`org-admin`/`superadmin` only, always scoped to the caller's own `org_id` (never accepted from the
+request body). Backed by the `/settings/sso` admin page as well as direct API use.
+| Method | Path | Result |
+|---|---|---|
+| POST | `/org/sso-config` `{issuer, client_id, client_secret, email_domain}` | `201 {config}` — upserts the org's SSO config; `client_secret` is encrypted at rest (Fernet, `SSO_CONFIG_ENCRYPTION_KEY`) and never returned by any endpoint, same posture as a password hash |
+| GET | `/org/sso-config` | `200 {config}` \| `404` if none configured |
+| DELETE | `/org/sso-config` | `204` |
 
 ## Export
 | Method | Path | Result |

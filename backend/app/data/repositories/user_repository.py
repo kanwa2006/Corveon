@@ -25,7 +25,7 @@ class UserRepository:
         self,
         *,
         email: str,
-        password_hash: str,
+        password_hash: str | None,
         role: UserRole = UserRole.USER,
         org_id: uuid.UUID | None = None,
     ) -> User:
@@ -33,3 +33,14 @@ class UserRepository:
         self._session.add(user)
         await self._session.flush()
         return user
+
+    async def get_or_create_sso_user(self, *, email: str, org_id: uuid.UUID) -> User:
+        """JIT-provisions a user on first SSO login (ADR-0025), or returns
+        the existing one by email. Never changes an existing user's org_id
+        — the caller must independently check the returned user's org_id
+        matches the authenticating org, so a misconfigured or malicious IdP
+        can never move an account across the isolation boundary."""
+        existing = await self.get_by_email(email)
+        if existing is not None:
+            return existing
+        return await self.create(email=email, password_hash=None, org_id=org_id)

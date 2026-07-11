@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 
@@ -37,11 +38,22 @@ export default function AppLayout({ children }: { children: ReactNode }): React.
     return null; // redirecting via the effect above
   }
 
+  const isOrgAdmin =
+    currentUser.data?.role === 'org-admin' || currentUser.data?.role === 'superadmin';
+
   return (
     <div className="min-h-screen bg-background">
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
         <span className="text-lg font-semibold">Corveon</span>
         <div className="flex items-center gap-2">
+          {isOrgAdmin && (
+            <Link
+              href="/settings/sso"
+              className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
+            >
+              Settings
+            </Link>
+          )}
           <span className="hidden text-sm text-muted-foreground sm:inline">
             {currentUser.data?.email}
           </span>

@@ -30,5 +30,6 @@ once `Accepted`; to change a decision, add a new ADR that supersedes the old one
 | [0022](0022-qdrant-pluggable-vector-store.md) | Qdrant as a config-selected alternative to pgvector, behind the `VectorStore` seam ADR-0001 reserved | Accepted |
 | [0023](0023-postgres-read-replica-option.md) | Optional Postgres read-replica routing for pure-read endpoints, config-gated and RLS-safe | Accepted |
 | [0024](0024-ollama-only-deployment-mode.md) | Ollama-only deployment mode — code-enforced guarantee that AI chat + evidence retrieval never call a cloud provider or public connector | Accepted |
+| [0025](0025-enterprise-sso-oidc.md) | Enterprise SSO via OIDC (Authorization Code + PKCE), org-scoped by email domain, JIT provisioning; SAML deferred | Accepted |
 
 New ADRs use [`_template.md`](_template.md) and the next sequential number.

@@ -86,7 +86,7 @@ All IDs UUID; all timestamps UTC. Every content-bearing table carries `chat_id`.
 | Table | Purpose / notes |
 |---|---|
 | `organizations` | tenant root (name, plan) |
-| `users` | email UNIQUE, password_hash (Argon2), role, org_id, is_active |
+| `users` | email UNIQUE, password_hash (Argon2, **nullable** — null for SSO-only accounts, ADR-0025), role, org_id, is_active |
 | `chats` | user_id, org_id, title, is_pinned, is_archived |
 | `messages` | chat_id, role, content, `routing_trace` JSONB · index (chat_id, created_at) |
 | `documents` | **chat_id mandatory (isolation anchor)**, filename, mime_type, status, page_count |
@@ -95,6 +95,7 @@ All IDs UUID; all timestamps UTC. Every content-bearing table carries `chat_id`.
 | `images` | chat_id, document_id?, ocr_text |
 | `saved_responses` / `notes` | chat_id, content |
 | `trusted_sources` | org_id, type, name, config JSONB, version, is_active |
+| `org_sso_configs` | org_id UNIQUE, provider_type, issuer, client_id, client_secret_encrypted, email_domain UNIQUE, is_active |
 | `medications` | chat_id, raw_text, rxcui?, name, dose?, route?, frequency? |
 | `medication_findings` | chat_id, medication_a_id, medication_b_id?, type, severity, source, rule_id, explanation, provenance JSONB |
 | `audit_log` | append-only: actor_id, action, entity, ip, metadata JSONB |
@@ -126,6 +127,21 @@ default (every read stays on the primary); when set, `Database` builds a second 
 factory and pure-read endpoints (currently `POST /chats/{id}/search`, via `ReadOnlyRlsDbDep`) use it
 instead. The RLS GUC (below) is per-connection session state, never replicated — a replica session
 gets its own `set_rls_user` call each request, identical to the primary.
+
+**Enterprise SSO** (`app/sso/`, ADR-0025): OIDC only (Authorization Code + PKCE), SAML deferred.
+Org routing is by email domain, not org ID/slug — a user enters their email on the login page, the
+backend looks up `org_sso_configs.email_domain` (unique) to find which org's IdP to redirect to.
+`POST /auth/sso/start` → IdP → `GET /auth/sso/callback` JIT-provisions or looks up the `User` by
+email, **never reassigning an existing user's `org_id`** (rejects with `403` on a cross-org email
+collision), then mints a session through the same `create_access_token`/`create_refresh_token`
+every other login path uses — nothing downstream needs to know a user authenticated via SSO. The
+client secret is encrypted at rest (Fernet, `SSO_CONFIG_ENCRYPTION_KEY`) — a deliberate, narrow
+exception to "secrets via env only" (CLAUDE.md §8), since it's tenant-configured integration data,
+not an application secret; it's never returned by `GET /org/sso-config`. No RLS policy applies to
+`org_sso_configs` — it's account-provisioning configuration, not per-chat content, and is only ever
+read via the unauthenticated domain lookup or the RBAC+own-org-scoped admin CRUD endpoints. Managed
+via a production settings page (`/settings/sso`, org-admin only) built from the existing design
+system, not a new admin framework.
 
 ## 5. Per-chat isolation (defense in depth — §10.2)
 1. **Application guard** — every query passes the active `chat_id`.

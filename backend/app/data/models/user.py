@@ -23,7 +23,10 @@ class User(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(nullable=False)
+    # NULL for an SSO-only account (ADR-0025) — no local password exists to
+    # verify against; login() rejects with a clear message rather than a
+    # generic auth failure when this is NULL.
+    password_hash: Mapped[str | None] = mapped_column(nullable=True)
     role: Mapped[UserRole] = mapped_column(
         SAEnum(
             UserRole,

@@ -9,6 +9,37 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
 ## [Unreleased]
 
 ### Added
+- **Enterprise path: Enterprise SSO (OIDC)** (Roadmap, ADR-0025): sign in through an org's own
+  identity provider (Okta, Azure AD, Google Workspace, etc.) instead of — or alongside — local
+  email+password auth, scoped per-org so one org's SSO configuration never authenticates a user into
+  a different org. OIDC only (Authorization Code flow + PKCE); SAML is deferred, with a documented
+  seam (`provider_type` column) for adding it later without a redesign.
+  - New `org_sso_configs` table (migration `0009`, `org_id`/`email_domain` both UNIQUE);
+    `users.password_hash` becomes nullable for SSO-only accounts.
+  - Org routing by email domain, not org ID/slug: `POST /auth/sso/start {email}` → IdP →
+    `GET /auth/sso/callback?code=&state=`, with `state`/PKCE `code_verifier`/`nonce` single-use and
+    Redis-backed (300s TTL). JIT-provisions a `User` on first login or finds an existing one by
+    email — rejects with `403` if an existing user's `org_id` doesn't match the authenticating org,
+    so a misconfigured or malicious IdP can never move an account across the isolation boundary.
+    Mints a session through the existing `create_access_token`/`create_refresh_token` — identical
+    shape to password login, so the frontend BFF cookie-setting code needed zero changes.
+  - Hand-rolled async OIDC client (`app/sso/oidc_client.py`) over `httpx`, matching this codebase's
+    established external-client convention rather than pyjwt's synchronous `PyJWKClient`; discovery/
+    JWKS responses Redis-cached (`app/sso/cache.py`). RS256 `id_token` verification checks
+    `iss`/`aud`/`exp`/`nonce` and matches JWKS by `kid`.
+  - Client secret encrypted at rest (Fernet, new `SSO_CONFIG_ENCRYPTION_KEY` setting) — a narrow,
+    documented exception to "secrets via env only" since it's tenant-configured integration data,
+    not an application secret; never returned by `GET /org/sso-config`.
+  - `POST/GET/DELETE /org/sso-config`, `org-admin`/`superadmin` only, always scoped to the caller's
+    own `org_id`. New production settings page (`/settings/sso`) built from the existing design
+    system (`Card`, `Button`, `Input`, `Dialog`, new `AlertSuccess`) — no new admin framework.
+  - Frontend: a "Sign in with SSO" tab on the login page (work email → redirect) and the callback
+    route that sets cookies exactly like password login, plus an `sso_failed` error state.
+  - Tests: unit (crypto round-trip, OIDC client PKCE/discovery/JWKS/token-exchange/id_token
+    verification against a mocked IdP), database-integration (full start→callback flow, JIT
+    provisioning, cross-org rejection, inactive-user/state-replay/missing-email-claim rejection), API
+    (RBAC, org-scoped isolation, secret-never-returned, full round trip via a new
+    `get_sso_http_transport` dependency override), frontend unit (login-form SSO tab).
 - **Multi-agent depth: Public Evidence Retrieval agent** (Roadmap, ADR-0021): implements the
   blueprint's RAG-public-evidence routing branch — a substantive query in a chat with no uploaded
   documents now searches the same six public medical-evidence connectors the Evidence Verification

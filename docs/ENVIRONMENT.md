@@ -25,6 +25,7 @@ come from the environment only — never code, never the database.
 | `JWT_ACCESS_TTL_SECONDS` | `900` | access token lifetime |
 | `JWT_REFRESH_TTL_SECONDS` | `1209600` | refresh token lifetime |
 | `ARGON2_TIME_COST` / `ARGON2_MEMORY_COST` / `ARGON2_PARALLELISM` | `3` / `65536` / `4` | Argon2id params |
+| `SSO_CONFIG_ENCRYPTION_KEY` | — | Fernet key encrypting `org_sso_configs.client_secret_encrypted` (ADR-0025). Only required once an org saves an SSO config — blank is a normal state otherwise. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
 
 ## Database (Postgres 16 + pgvector)
 | Var | Default | Meaning |

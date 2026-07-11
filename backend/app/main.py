@@ -17,6 +17,7 @@ from app.api.routers import health as health_router
 from app.api.routers import jobs as jobs_router
 from app.api.routers import medication as medication_router
 from app.api.routers import messages as messages_router
+from app.api.routers import org_sso as org_sso_router
 from app.api.routers import search as search_router
 from app.core.arq import create_arq_pool
 from app.core.config import get_settings
@@ -135,6 +136,7 @@ def create_app() -> FastAPI:
     app.include_router(search_router.router, prefix="/api/v1")
     app.include_router(evidence_router.router, prefix="/api/v1")
     app.include_router(medication_router.router, prefix="/api/v1")
+    app.include_router(org_sso_router.router, prefix="/api/v1")
 
     if settings.PROMETHEUS_METRICS_ENABLED:
         mount_metrics(app)

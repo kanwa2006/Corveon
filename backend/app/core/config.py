@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     ARGON2_TIME_COST: int = 3
     ARGON2_MEMORY_COST: int = 65536
     ARGON2_PARALLELISM: int = 4
+    # Fernet key encrypting org_sso_configs.client_secret at rest (ADR-0025).
+    # Only required once an org actually saves an SSO config — checked at
+    # that point (app/sso/crypto.py), not here: SSO itself is optional,
+    # same posture as every other optional subsystem (§23.1).
+    SSO_CONFIG_ENCRYPTION_KEY: str | None = None
 
     # ── Database (Postgres 16 + pgvector) ────────────────────
     DATABASE_URL: str
