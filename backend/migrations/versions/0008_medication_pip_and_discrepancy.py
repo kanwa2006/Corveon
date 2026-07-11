@@ -1,4 +1,4 @@
-"""medication safety engine phase 3 — pip_criteria table, nullable medication_findings.medication_a_id
+"""medication safety engine phase 3 — pip_criteria table, nullable medication_a_id
 
 Revision ID: 0008
 Revises: 0007
