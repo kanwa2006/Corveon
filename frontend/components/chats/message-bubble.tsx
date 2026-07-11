@@ -1,13 +1,22 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Download, FileText, Sparkles, User } from 'lucide-react';
+import { Download, ExternalLink, FileText, Sparkles, User } from 'lucide-react';
 import { useState } from 'react';
 
 import { EvidenceVerificationPanel } from '@/components/chats/evidence-verification-panel';
 import { useEvidenceVerification } from '@/lib/hooks/use-evidence-verification';
 import { exportMessage, type ExportFormat, type MessagePublic } from '@/lib/api/messages';
 import { cn } from '@/lib/utils';
+
+const PUBLIC_EVIDENCE_SOURCE_LABEL: Record<string, string> = {
+  pubmed: 'PubMed',
+  dailymed: 'DailyMed',
+  openfda: 'openFDA',
+  clinicaltrials: 'ClinicalTrials.gov',
+  mesh: 'MeSH',
+  rxnorm: 'RxNorm',
+};
 
 interface MessageBubbleProps {
   message: MessagePublic;
@@ -16,6 +25,7 @@ interface MessageBubbleProps {
 export function MessageBubble({ message }: MessageBubbleProps): React.JSX.Element {
   const isUser = message.role === 'user';
   const citations = message.routing_trace?.retrieved_chunks ?? [];
+  const publicEvidence = message.routing_trace?.public_evidence ?? [];
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
   const verification = useEvidenceVerification(message.chat_id);
 
@@ -70,6 +80,36 @@ export function MessageBubble({ message }: MessageBubbleProps): React.JSX.Elemen
                 {chunk.document_filename}
               </span>
             ))}
+          </div>
+        )}
+
+        {publicEvidence.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {publicEvidence.map((item, index) => {
+              const label = PUBLIC_EVIDENCE_SOURCE_LABEL[item.source] ?? item.source;
+              const chip = (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-evidence-verified/30 bg-evidence-verified/10 px-2 py-0.5 text-xs font-medium text-evidence-verified"
+                  title={item.title}
+                >
+                  {label}
+                  {item.url && <ExternalLink className="h-3 w-3" aria-hidden="true" />}
+                </span>
+              );
+              return item.url ? (
+                <a
+                  key={`${item.source}-${item.identifier ?? index}`}
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${label}: ${item.title}`}
+                >
+                  {chip}
+                </a>
+              ) : (
+                <span key={`${item.source}-${item.identifier ?? index}`}>{chip}</span>
+              );
+            })}
           </div>
         )}
 

@@ -254,8 +254,27 @@ contract. No application code. Self-review complete.
   shared CI runner, the same reasoning the existing Locust concurrency smoke already documents for
   not asserting latency thresholds.
 
+### Multi-agent depth — Public Evidence Retrieval agent ✅
+- ✅ New `PublicEvidenceAgent` (`app/agents/public_evidence.py`, ADR-0021) implements the
+  blueprint's RAG-public-evidence routing branch: when a chat has no uploaded documents, search the
+  same six public medical-evidence connectors the Evidence Verification Engine already uses
+  (PubMed, DailyMed, openFDA, ClinicalTrials.gov, MeSH, RxNorm) instead of falling straight through
+  to an ungrounded pure-LLM answer. Reuses `retrieve_evidence_for_claim` verbatim — no new
+  connector code, no new retrieval logic.
+- ✅ New `RoutingPath.RAG_PUBLIC_EVIDENCE`; `TaskPlanningAgent` tries public evidence only when the
+  chat has no documents, falling back to `PURE_LLM` when nothing is found — an honest "no grounding
+  available from either source" state, not a silent skip.
+- ✅ `routing_trace` gains a `public_evidence[]` array, kept strictly separate from
+  `retrieved_chunks[]` (uploaded documents) — different trust levels, never blurred.
+- ✅ Frontend: public-evidence citation chips in the message bubble (linked to the source when a
+  URL exists), styled distinctly from uploaded-document citations.
+- ✅ Tests: `PublicEvidenceAgent` unit tests, `TaskPlanningAgent` routing tests (found/not-found/
+  no-agent-configured), API tests (fake connector registry, no live network calls), frontend
+  component tests for the new citation chips.
+- Org-trusted sources and full multi-agent verification remain future work.
+
 ### Later phases — not yet implemented
-- Multi-agent depth; enterprise path (Qdrant option, SSO, read replicas, on-prem/Ollama).
+- Enterprise path (Qdrant option, SSO, read replicas, on-prem/Ollama).
 
 ## Cross-cutting, always-on
 Per-feature Definition of Done · docs updated per PR · ADR per resolved decision · golden tests for

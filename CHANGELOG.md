@@ -8,6 +8,38 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
 
 ## [Unreleased]
 
+### Added
+- **Multi-agent depth: Public Evidence Retrieval agent** (Roadmap, ADR-0021): implements the
+  blueprint's RAG-public-evidence routing branch — a substantive query in a chat with no uploaded
+  documents now searches the same six public medical-evidence connectors the Evidence Verification
+  Engine already uses (PubMed, DailyMed, openFDA, ClinicalTrials.gov, MeSH, RxNorm) instead of
+  falling straight through to an ungrounded pure-LLM answer.
+  - `app/agents/public_evidence.py` — `PublicEvidenceAgent`, a thin `Agent`-protocol wrapper
+    (matching `RetrievalAgent`'s own shape) around `retrieve_evidence_for_claim`
+    (`app/evidence/retrieval.py`), reused verbatim: no new connector code, no new retrieval logic.
+  - `RoutingPath.RAG_PUBLIC_EVIDENCE` (`app/agents/state.py`); `TaskPlanningAgent` tries public
+    evidence only when the chat has no documents, falling back to `PURE_LLM` when nothing is
+    found — an honest "no grounding available from either source," not a silent skip.
+  - `OrchestratorState.public_evidence` (reuses `EvidenceResult` directly, the connector layer's
+    own type) is kept strictly separate from `citations` (uploaded-document chunks) — different
+    trust levels, never blurred; the response-generation prompt labels each context block
+    distinctly, and `routing_trace` gains a `public_evidence[]` array alongside the existing
+    `retrieved_chunks[]`.
+  - `POST /chats/{id}/messages` now depends on `EvidenceConnectorRegistryDep` (already existed for
+    `/verify`) to construct the agent — no new endpoint, no API contract change beyond the additive
+    `routing_trace` fields.
+  - Frontend: public-evidence citation chips in the message bubble, linked to the source when a URL
+    exists, styled distinctly (`evidence-verified` token) from uploaded-document citations
+    (`evidence-uploaded` token).
+  - Cost/latency tradeoff (documented in ADR-0021): up to six additional concurrent HTTP round-trips
+    before generation when a chat has no documents, mitigated by the same Redis cache already in
+    front of every connector — the same tradeoff the Evidence Verification Engine already accepted
+    for its own fan-out, just widened to when it runs.
+  - Tests: `PublicEvidenceAgent` unit tests, `TaskPlanningAgent` routing tests (evidence found /
+    not found / no agent configured — backward-compatible default), API tests using a fake
+    connector registry (no live network calls in CI), frontend component tests for the new citation
+    chips.
+
 ### Fixed
 - **WCAG AA color-contrast failures** (Roadmap — accessibility + performance audit): a systematic
   axe-core sweep across every page/state found real contrast failures below the required 4.5:1 that

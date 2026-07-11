@@ -35,7 +35,7 @@ schema and kept honest by contract tests (schemathesis).
 ## Messages / AI (SSE streaming)
 | Method | Path | Result |
 |---|---|---|
-| POST | `/chats/{id}/messages` | `202` + SSE — `token` events (text deltas), a final `done` event (`{message_id, routing_trace}`), or an `error` event (`provider_unavailable`, degraded mode, ADR-0006). Implemented Week 1: the browser connects directly with a stream ticket (`?ticket=`, ADR-0016), not the session cookie. |
+| POST | `/chats/{id}/messages` | `202` + SSE — `token` events (text deltas), a final `done` event (`{message_id, routing_trace}`), or an `error` event (`provider_unavailable`, degraded mode, ADR-0006). Implemented Week 1: the browser connects directly with a stream ticket (`?ticket=`, ADR-0016), not the session cookie. `routing_trace.path` ∈ `{fast_path, pure_llm, rag_grounded, rag_no_match, rag_public_evidence}`; `retrieved_chunks[]` (uploaded-document citations) and `public_evidence[]` (`{source, title, url, identifier, snippet, published_date}`, public-source citations — populated only on `rag_public_evidence`, ADR-0021) are always both present, kept as separate arrays since they're different trust levels. |
 | POST | `/chats/{id}/messages/{mid}/regenerate` | `202` + SSE — planned (Month 1+), not yet implemented |
 | POST | `/chats/{id}/messages/{mid}/continue` | `202` + SSE — planned (Month 1+), not yet implemented |
 | GET | `/chats/{id}/messages` | `200 [message]` |

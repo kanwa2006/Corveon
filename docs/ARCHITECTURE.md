@@ -118,13 +118,25 @@ by **both** `chat_id` and `model_id` (ADR-0008 / §23.4); model changes require 
    predicate. Cross-chat access requires an explicit user "import" that copies/links artifacts.
 
 ## 6. Orchestration & agents
-- **Custom typed state graph** over a Pydantic state object (ADR-0003). Clean seam to adopt
-  LangGraph later for a single complex flow without rewriting agents.
-- Routing policy is a deterministic decision tree (pure LLM · RAG-uploaded · RAG-public ·
-  hybrid · org-trusted · multi-agent · external-lookup) surfaced as `routing_trace`.
-- Agents are single-responsibility, self-registering, schema-validated (catalog in §7 of the blueprint).
+- **Custom typed state graph** over a plain dataclass state object (`app/agents/state.py`,
+  ADR-0003). Clean seam to adopt LangGraph later for a single complex flow without rewriting agents.
+- Routing policy is a deterministic decision tree, five of the blueprint's seven named branches
+  implemented today: fast-path (trivial input) · pure-LLM (no chat documents, no public evidence
+  found either) · RAG-uploaded/grounded · RAG-uploaded/no-match · **RAG-public-evidence** (no chat
+  documents, but a public-evidence search found something — `PublicEvidenceAgent`,
+  `app/agents/public_evidence.py`, ADR-0021). Org-trusted sources and full multi-agent verification
+  remain future work. Every outcome is surfaced as `routing_trace` on the persisted message.
+- Agents (`app/agents/`, `Agent` protocol in `base.py`) are single-responsibility, schema-validated
+  steps over the shared state: Query Understanding → Task Planning → Retrieval **or** Public
+  Evidence Retrieval → Response Generation (`app/orchestrator/chat_orchestrator.py` wires them).
+  `PublicEvidenceAgent` reuses the Evidence Verification Engine's own connector registry and
+  retrieval function verbatim (`app/evidence/retrieval.py::retrieve_evidence_for_claim`) — no
+  parallel retrieval logic, no new connector code (ADR-0021).
 - **Throughput control (§23.2):** a per-request LLM-call budget + a shared token-bucket per
-  provider; low-stakes agent steps prefer local Ollama to conserve scarce cloud quota.
+  provider; low-stakes agent steps prefer local Ollama to conserve scarce cloud quota. Public
+  evidence retrieval costs zero additional LLM calls (it's a deterministic connector fan-out, not a
+  model call) but does add up to six concurrent HTTP round-trips before generation — mitigated by
+  the same Redis cache already in front of every connector (`EVIDENCE_CACHE_TTL_SECONDS`).
 
 ## 7. Evidence & provenance
 Implemented Month 3 (`app/evidence/`, `POST /chats/{id}/verify` — see [API.md](API.md)). Each

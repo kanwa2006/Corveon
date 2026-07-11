@@ -1,11 +1,14 @@
 """Task Planning agent (blueprint §7) — combines Query Understanding's intent
 classification with this chat's own state (does it have documents, did
-retrieval find anything relevant) to pick a ``RoutingPath``. No always-on
-retrieval (CLAUDE.md §3): a trivial query never even checks whether documents
-exist, and a query with no documents never calls Retrieval at all."""
+retrieval find anything relevant, did public evidence search find anything)
+to pick a ``RoutingPath``. No always-on retrieval (CLAUDE.md §3): a trivial
+query never even checks whether documents exist, and a query with documents
+never triggers a public-evidence search (ADR-0021's branch is specifically
+for the no-documents case)."""
 
 from __future__ import annotations
 
+from app.agents.public_evidence import PublicEvidenceAgent
 from app.agents.query_understanding import QueryUnderstandingAgent
 from app.agents.retrieval import RetrievalAgent
 from app.agents.state import OrchestratorState, RoutingPath
@@ -21,9 +24,11 @@ class TaskPlanningAgent:
         self,
         query_understanding: QueryUnderstandingAgent | None = None,
         retrieval: RetrievalAgent | None = None,
+        public_evidence: PublicEvidenceAgent | None = None,
     ) -> None:
         self._query_understanding = query_understanding or QueryUnderstandingAgent()
         self._retrieval = retrieval or RetrievalAgent()
+        self._public_evidence = public_evidence
 
     async def run(self, state: OrchestratorState) -> OrchestratorState:
         with tracer.start_as_current_span("orchestrator.plan_task") as span:
@@ -39,8 +44,15 @@ class TaskPlanningAgent:
                 chat_id=state.chat_id, model_id=state.embedding_model.model_id
             )
             if not has_documents:
-                state.routing_path = RoutingPath.PURE_LLM
-                span.set_attribute("routing.path", RoutingPath.PURE_LLM.value)
+                if self._public_evidence is not None:
+                    state = await self._public_evidence.run(state)
+                state.routing_path = (
+                    RoutingPath.RAG_PUBLIC_EVIDENCE
+                    if state.public_evidence
+                    else RoutingPath.PURE_LLM
+                )
+                span.set_attribute("routing.path", state.routing_path.value)
+                span.set_attribute("routing.public_evidence_count", len(state.public_evidence))
                 return state
 
             state = await self._retrieval.run(state)
