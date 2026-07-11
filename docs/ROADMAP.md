@@ -232,9 +232,30 @@ contract. No application code. Self-review complete.
 - ✅ Tests: not-configured / imported / idempotent-already-current / missing-version-configuration-
   error, for both the DDInter and PIP-criteria loader paths.
 
+### Accessibility + performance audit ✅
+- ✅ Systematic axe-core sweep (login, register, dashboard, chats list, chat detail empty +
+  message-thread states, plus injected evidence/PIP/destructive badge patterns unreachable via
+  degraded-mode e2e) found real WCAG AA color-contrast failures the three existing a11y specs had
+  been masking with `disableRules(['color-contrast'])` around a documented-as-"tracked as a
+  follow-up" issue — `--primary` (3.47:1/3.63:1), `--muted-foreground` (4.28:1), plus a
+  previously-undocumented set: `--evidence-uploaded` (3.26:1), `--evidence-verified` (3.44:1),
+  `--evidence-ai-reasoning` (2.10:1), `--evidence-conflicting` (4.13:1), and `--destructive`
+  (~4.1:1, same original hue/lightness as `--evidence-conflicting`). All darkened in light-mode
+  `app/globals.css` to clear 4.5:1 (dark-theme tokens already passed and are untouched); the
+  `disableRules(['color-contrast'])` workarounds removed from all three specs now that the
+  underlying tokens actually pass.
+- ✅ New `tests/a11y/dashboard-pages.spec.ts` — `/dashboard` had no dedicated a11y coverage before.
+- ✅ Lighthouse pass (login page, representative of the shared layout/token/font setup every other
+  page uses): accessibility 100, best-practices 100, SEO 100, performance 93. Found and fixed a
+  real `errors-in-console` best-practices failure — every page load 404'd on `/favicon.ico` (no
+  favicon existed at all); added `app/icon.tsx` (Next.js's native icon-route convention, no binary
+  asset to vendor).
+- ✅ No new CI performance gate added — Lighthouse scores are single-machine-local and noisy on a
+  shared CI runner, the same reasoning the existing Locust concurrency smoke already documents for
+  not asserting latency thresholds.
+
 ### Later phases — not yet implemented
 - Multi-agent depth; enterprise path (Qdrant option, SSO, read replicas, on-prem/Ollama).
-- Accessibility + performance audits.
 
 ## Cross-cutting, always-on
 Per-feature Definition of Done · docs updated per PR · ADR per resolved decision · golden tests for

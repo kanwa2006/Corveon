@@ -2,36 +2,30 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 function uniqueEmail(): string {
-  return `chats-a11y-${Date.now()}-${Math.floor(Math.random() * 10_000)}@example.com`;
+  return `dashboard-a11y-${Date.now()}-${Math.floor(Math.random() * 10_000)}@example.com`;
 }
 
 const PASSWORD = 'correcthorsebattery';
 
-test.describe('accessibility — chats pages', () => {
-  test('chats list page has no detectable a11y violations', async ({ page }) => {
+test.describe('accessibility — dashboard page', () => {
+  test('dashboard page has no detectable a11y violations', async ({ page }) => {
     const email = uniqueEmail();
     await page.goto('/register');
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await page.getByLabel('Confirm password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Create account' }).click();
-    // Wait for the redirect to actually land on /login before filling its
-    // form — otherwise these fills can race the still-mounted register form
-    // (which also has "Email"/"Password" fields) and hit the wrong inputs.
     await expect(page).toHaveURL(/\/login/);
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    // Wait for sign-in to actually complete (cookies set) before navigating
-    // — otherwise /chats can be hit pre-auth and bounce back to /login.
     await expect(page).toHaveURL(/\/dashboard/);
-
-    await page.goto('/chats');
     // Wait for the authenticated app shell to actually mount before running
     // axe — otherwise it can catch the brief unauthenticated-check loading
-    // state, which has no <main> landmark yet, as a false landmark-one-main
-    // violation.
-    await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible();
+    // state, which has no <main> landmark or h1 yet (same note as
+    // tests/a11y/chats-pages.spec.ts).
+    await expect(page.getByRole('heading', { name: /welcome/i })).toBeVisible();
+
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
   });

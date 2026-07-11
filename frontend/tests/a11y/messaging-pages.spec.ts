@@ -43,16 +43,7 @@ test.describe('accessibility — chat detail page (messages + documents)', () =>
       timeout: 15_000,
     });
 
-    // color-contrast is disabled here only for this assertion — it caught a
-    // real, pre-existing, sitewide issue in the shared --primary/
-    // --primary-foreground design token (used by every primary-colored
-    // button, not just the new user-message bubble), which needs a
-    // coordinated fix across light/dark themes rather than a one-off patch
-    // bundled into this feature. Tracked as a follow-up (search git history/
-    // spawned tasks for "WCAG AA color-contrast" around this branch).
-    const threadResults = await new AxeBuilder({ page })
-      .disableRules(['color-contrast'])
-      .analyze();
+    const threadResults = await new AxeBuilder({ page }).analyze();
     expect(threadResults.violations).toEqual([]);
   });
 });

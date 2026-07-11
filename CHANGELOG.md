@@ -8,6 +8,22 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
 
 ## [Unreleased]
 
+### Fixed
+- **WCAG AA color-contrast failures** (Roadmap — accessibility + performance audit): a systematic
+  axe-core sweep across every page/state found real contrast failures below the required 4.5:1 that
+  three existing a11y specs had been masking with `disableRules(['color-contrast'])` around a
+  comment tracking it as a follow-up — `--primary` (3.47:1 as button text, 3.63:1 as link text) and
+  `--muted-foreground` (4.28:1, the chat-list tab labels) — plus a previously-undocumented set the
+  sweep newly surfaced: `--evidence-uploaded` (3.26:1), `--evidence-verified` (3.44:1),
+  `--evidence-ai-reasoning` (2.10:1, the worst offender), `--evidence-conflicting` (4.13:1), and
+  `--destructive` (~4.1:1, sharing `--evidence-conflicting`'s original hue/lightness). All darkened
+  in light-mode `app/globals.css` (dark-theme tokens already passed and are untouched); the three
+  `disableRules(['color-contrast'])` workarounds removed now that the underlying tokens pass on
+  their own. New `tests/a11y/dashboard-pages.spec.ts` — `/dashboard` had no dedicated a11y coverage.
+- **Missing favicon** (same audit): every page load 404'd fetching `/favicon.ico` (no favicon
+  existed at all), flagged by Lighthouse's `errors-in-console` best-practices audit. Added
+  `app/icon.tsx` using Next.js's native icon-route convention — no binary asset to vendor.
+
 ### Added
 - **Reproducible snapshot automation** (Roadmap, ADR-0019): `app/medication/snapshot_sync.py` wires
   the `DDINTER_SNAPSHOT_PATH` setting — declared for this purpose but never actually read by any
