@@ -119,3 +119,23 @@ def test_settings_accepts_a_read_replica_url() -> None:
         DATABASE_READ_REPLICA_URL="postgresql+asyncpg://user:pass@replica-host/db",
     )
     assert settings.DATABASE_READ_REPLICA_URL == "postgresql+asyncpg://user:pass@replica-host/db"
+
+
+@pytest.mark.unit
+def test_settings_defaults_to_standard_deployment_mode() -> None:
+    settings = Settings(
+        JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+    )
+    assert settings.DEPLOYMENT_MODE == "standard"
+    assert settings.is_ollama_only is False
+
+
+@pytest.mark.unit
+def test_settings_accepts_ollama_only_deployment_mode() -> None:
+    settings = Settings(
+        JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+        DEPLOYMENT_MODE="ollama_only",
+    )
+    assert settings.is_ollama_only is True

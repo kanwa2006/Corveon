@@ -41,10 +41,12 @@ roll forward with a new migration rather than downgrading.
 
 ## Path to enterprise scale (§17)
 - Split ARQ workers into dedicated pools (ingest vs verify vs export).
-- Move vectors to **Qdrant past ~10M** (ADR-0001 keeps a clean seam).
-- Managed Postgres with read replicas; RLS-based multi-tenancy.
+- ✅ Vectors can move to **Qdrant past ~10M** — `VECTOR_STORE=qdrant` (ADR-0001, ADR-0022).
+- ✅ Managed Postgres with a read replica — `DATABASE_READ_REPLICA_URL` (ADR-0023). RLS-based
+  multi-tenancy is already the default (ADR-0013).
 - Horizontal API autoscaling; per-tenant provider key pools.
-- Optional on-prem / Ollama-only deployment for data-residency (hospitals); SSO/SAML.
+- ✅ Optional on-prem / Ollama-only deployment for data-residency (hospitals) —
+  `DEPLOYMENT_MODE=ollama_only` (ADR-0024). SSO/SAML remains future work.
 
 ## Pre-deploy checklist
 - [ ] CI fully green (all test layers + security scans).

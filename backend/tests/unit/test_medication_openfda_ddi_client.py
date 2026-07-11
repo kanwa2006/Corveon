@@ -109,3 +109,25 @@ async def test_check_pair_returns_none_when_rate_limit_bucket_is_exhausted(app) 
         transport=_transport(handler),
     )
     assert await client.check_pair(label_drug, "aspirin") is None
+
+
+@pytest.mark.asyncio
+async def test_check_pair_returns_none_without_any_network_call_when_disabled(app) -> None:  # type: ignore[no-untyped-def]
+    """ollama_only deployments (ADR-0024) construct this client with
+    enabled=False — check_pair() must never reach the network, cache, or
+    rate limiter, not even to check the cache first."""
+    label_drug = f"disabled-client-{uuid.uuid4()}"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("should not be called when the client is disabled")
+
+    client = OpenFdaDdiClient(
+        base_url="https://api.fda.gov",
+        api_key=None,
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rpm=240,
+        transport=_transport(handler),
+        enabled=False,
+    )
+    assert await client.check_pair(label_drug, "aspirin") is None

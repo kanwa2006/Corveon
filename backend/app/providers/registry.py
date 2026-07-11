@@ -69,6 +69,10 @@ class ProviderRegistry:
     def health(self) -> ProviderHealthTracker:
         return self._health
 
+    @property
+    def registered_provider_names(self) -> list[str]:
+        return list(self._priority)
+
     async def stream_chat(
         self,
         *,
@@ -149,33 +153,37 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
     providers: dict[str, ChatProvider] = {}
     token_buckets: dict[str, TokenBucket] = {}
 
-    if settings.gemini_api_key_pool:
-        providers["gemini"] = GeminiProvider(
-            api_keys=settings.gemini_api_key_pool,
-            default_model=settings.GEMINI_DEFAULT_MODEL,
-        )
-        _maybe_register_rpm_limit(token_buckets, "gemini", settings.GEMINI_RPM_LIMIT)
+    # ollama_only (ADR-0024) is a stronger guarantee than simply leaving keys
+    # blank: a cloud provider is never registered even if its key is set, so
+    # an operator's leftover .env value can't silently re-enable one.
+    if not settings.is_ollama_only:
+        if settings.gemini_api_key_pool:
+            providers["gemini"] = GeminiProvider(
+                api_keys=settings.gemini_api_key_pool,
+                default_model=settings.GEMINI_DEFAULT_MODEL,
+            )
+            _maybe_register_rpm_limit(token_buckets, "gemini", settings.GEMINI_RPM_LIMIT)
 
-    if settings.anthropic_api_key_pool:
-        providers["anthropic"] = AnthropicProvider(
-            api_keys=settings.anthropic_api_key_pool,
-            default_model=settings.ANTHROPIC_DEFAULT_MODEL,
-        )
-        _maybe_register_rpm_limit(token_buckets, "anthropic", settings.ANTHROPIC_RPM_LIMIT)
+        if settings.anthropic_api_key_pool:
+            providers["anthropic"] = AnthropicProvider(
+                api_keys=settings.anthropic_api_key_pool,
+                default_model=settings.ANTHROPIC_DEFAULT_MODEL,
+            )
+            _maybe_register_rpm_limit(token_buckets, "anthropic", settings.ANTHROPIC_RPM_LIMIT)
 
-    if settings.openai_api_key_pool:
-        providers["openai"] = OpenAIProvider(
-            api_keys=settings.openai_api_key_pool,
-            default_model=settings.OPENAI_DEFAULT_MODEL,
-        )
-        _maybe_register_rpm_limit(token_buckets, "openai", settings.OPENAI_RPM_LIMIT)
+        if settings.openai_api_key_pool:
+            providers["openai"] = OpenAIProvider(
+                api_keys=settings.openai_api_key_pool,
+                default_model=settings.OPENAI_DEFAULT_MODEL,
+            )
+            _maybe_register_rpm_limit(token_buckets, "openai", settings.OPENAI_RPM_LIMIT)
 
-    if settings.openrouter_api_key_pool:
-        providers["openrouter"] = OpenRouterProvider(
-            api_keys=settings.openrouter_api_key_pool,
-            default_model=settings.OPENROUTER_DEFAULT_MODEL,
-        )
-        _maybe_register_rpm_limit(token_buckets, "openrouter", settings.OPENROUTER_RPM_LIMIT)
+        if settings.openrouter_api_key_pool:
+            providers["openrouter"] = OpenRouterProvider(
+                api_keys=settings.openrouter_api_key_pool,
+                default_model=settings.OPENROUTER_DEFAULT_MODEL,
+            )
+            _maybe_register_rpm_limit(token_buckets, "openrouter", settings.OPENROUTER_RPM_LIMIT)
 
     # Ollama is registered optimistically — an unreachable local Ollama
     # raises ProviderUnavailableError at call time like any other provider

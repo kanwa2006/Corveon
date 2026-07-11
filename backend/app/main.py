@@ -33,7 +33,7 @@ from app.core.redis import create_redis_client
 from app.core.storage import create_object_storage
 from app.core.tracing import configure_tracing, instrument_app
 from app.data.base import Database
-from app.evidence.registry import build_evidence_connector_registry
+from app.evidence.registry import EvidenceConnectorRegistry, build_evidence_connector_registry
 from app.medication.openfda_ddi_client import OpenFdaDdiClient
 from app.medication.rxnorm_client import RxNormClient
 from app.providers.registry import build_provider_registry
@@ -58,19 +58,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Every evidence connector is always registered (unlike LLM providers,
     # none of the six public sources has an "absence" state — see
     # app/evidence/registry.py); built once per process for the same reason
-    # the provider registry is.
-    app.state.evidence_connectors = build_evidence_connector_registry(settings, app.state.redis)
+    # the provider registry is. Except in ollama_only mode (ADR-0024): an
+    # empty registry disables both the Evidence Verification endpoint and
+    # the chat orchestrator's public-evidence routing branch at this single
+    # choke point — neither consumer needs to know deployment mode exists.
+    app.state.evidence_connectors = (
+        EvidenceConnectorRegistry({})
+        if settings.is_ollama_only
+        else build_evidence_connector_registry(settings, app.state.redis)
+    )
     # Medication-Safety Engine Phase 1 live lookups — same RxNav/openFDA
     # settings the Evidence connectors use (same public APIs, different
     # domain-scoped clients, see app/medication/rxnorm_client.py's own
     # docstring for why they aren't the same classes). Always registered,
     # like the evidence connectors: neither RxNav nor openFDA has an
-    # "absence" state.
+    # "absence" state — except in ollama_only mode, where both clients are
+    # still constructed but disabled (ADR-0024), never touching the network.
     app.state.rxnorm_client = RxNormClient(
         base_url=settings.RXNAV_BASE_URL,
         redis=app.state.redis,
         cache_ttl_seconds=settings.EVIDENCE_CACHE_TTL_SECONDS,
         max_rps=settings.RXNAV_MAX_RPS,
+        enabled=not settings.is_ollama_only,
     )
     app.state.openfda_ddi_client = OpenFdaDdiClient(
         base_url=settings.OPENFDA_BASE_URL,
@@ -78,13 +87,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis=app.state.redis,
         cache_ttl_seconds=settings.EVIDENCE_CACHE_TTL_SECONDS,
         max_rpm=settings.OPENFDA_MAX_RPM,
+        enabled=not settings.is_ollama_only,
     )
     # The embedding model is NOT loaded here — it's a lazy, lru_cache'd
     # singleton (app/ingestion/embeddings.py) resolved on first use via
     # EmbeddingModelDep, so endpoints/tests that never touch search or
     # documents never pay the model-load cost.
 
-    logger.info("startup_complete", env=settings.CORVEON_ENV)
+    logger.info(
+        "startup_complete", env=settings.CORVEON_ENV, deployment_mode=settings.DEPLOYMENT_MODE
+    )
     yield
 
     await app.state.arq.aclose()

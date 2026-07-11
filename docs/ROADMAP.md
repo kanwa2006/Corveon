@@ -307,8 +307,30 @@ contract. No application code. Self-review complete.
   primary and a replica session, `Settings` field tests.
 - SSO and on-prem/Ollama hardening remain future work.
 
+### Enterprise path — Ollama-only deployment mode ✅
+- ✅ New `DEPLOYMENT_MODE=ollama_only` setting (ADR-0024) — a code-enforced guarantee, not just an
+  operator's promise, that AI chat and evidence retrieval never call a cloud provider or a public
+  medical-evidence API.
+- ✅ `build_provider_registry` (`app/providers/registry.py`) skips Gemini/Anthropic/OpenAI/
+  OpenRouter entirely in this mode, even if their keys are set — only Ollama is ever registered.
+- ✅ `app.state.evidence_connectors` is built as an empty registry instead of all six connectors —
+  one choke point that disables both the Evidence Verification endpoint and the chat orchestrator's
+  public-evidence routing branch (ADR-0021), reusing each consumer's own existing "nothing found"
+  fallback path — no orchestrator or verification-service change needed.
+- ✅ `RxNormClient`/`OpenFdaDdiClient` (Medication-Safety Engine RxNav normalization + openFDA DDI
+  fallback) gain a constructor-level `enabled` flag; disabled, they short-circuit to `None` before
+  touching the cache or network, reusing their own existing "`None` is a normal, non-error result"
+  contract — no `analysis_service.py`/`interactions.py`/`normalizer.py` change needed.
+- ✅ Zero behavior change when left at the default (`standard`). No schema change, no Alembic
+  migration. Pinned drug-data snapshot sync (ADR-0019) and local-disk storage (ADR-0014) already
+  made no network calls.
+- ✅ Tests: `build_provider_registry` ollama_only-mode unit tests, `RxNormClient`/`OpenFdaDdiClient`
+  disabled-client unit tests (proving zero network calls, not just a "not found" result), `Settings`
+  field tests.
+- SSO remains future work — this is the last "Enterprise path" item besides it.
+
 ### Later phases — not yet implemented
-- SSO, on-prem/Ollama hardening (remaining "Enterprise path" items).
+- SSO (the one remaining "Enterprise path" item).
 
 ## Cross-cutting, always-on
 Per-feature Definition of Done · docs updated per PR · ADR per resolved decision · golden tests for
