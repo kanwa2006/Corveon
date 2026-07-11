@@ -8,11 +8,12 @@ import uuid
 
 from fastapi import APIRouter
 
-from app.api.deps import CurrentUserDep, EmbeddingModelDep, RlsDbDep
+from app.api.deps import CurrentUserDep, EmbeddingModelDep, RlsDbDep, SettingsDep
 from app.api.routers._common import get_owned_chat_or_404
 from app.api.schemas.search import SearchHit, SearchRequest
 from app.data.repositories.chat_repository import ChatRepository
 from app.data.repositories.chunk_repository import ChunkRepository
+from app.data.vectorstore.registry import build_vector_store
 
 router = APIRouter(prefix="/chats", tags=["search"])
 
@@ -24,11 +25,12 @@ async def search_chat(
     db: RlsDbDep,
     current_user: CurrentUserDep,
     embedding_model: EmbeddingModelDep,
+    settings: SettingsDep,
 ) -> list[SearchHit]:
     chat_repo = ChatRepository(db)
     await get_owned_chat_or_404(chat_repo, chat_id, current_user.id)
 
-    chunk_repo = ChunkRepository(db)
+    chunk_repo = ChunkRepository(db, build_vector_store(settings, db))
     query_vector = embedding_model.embed_query(payload.query)
     hits = await chunk_repo.similarity_search(
         chat_id=chat_id,

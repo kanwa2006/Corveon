@@ -52,7 +52,8 @@ runs in the ARQ ingestion worker (`app/workers/tasks.py`), never inline in the r
 | DELETE | `/documents/{id}` | `204` — rejects with `409` while the document is mid-ingestion (`status: processing`) to avoid racing the worker's own writes |
 
 ## Search
-Implemented Week 1.
+Implemented Week 1. Backed by a pluggable vector store — pgvector by default, or Qdrant when
+`VECTOR_STORE=qdrant` (ADR-0022) — transparent to this contract either way.
 | Method | Path | Result |
 |---|---|---|
 | POST | `/chats/{id}/search` | `200 [hit]` — semantic, **in-chat only**; filters by both `chat_id` and embedding `model_id` (ADR-0008) |

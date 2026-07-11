@@ -39,6 +39,26 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
     not found / no agent configured — backward-compatible default), API tests using a fake
     connector registry (no live network calls in CI), frontend component tests for the new citation
     chips.
+- **Enterprise path: Qdrant vector-store option** (Roadmap, ADR-0022): pgvector remains the default;
+  Qdrant is now a config-selected alternative for deployments past pgvector's comfort zone, or
+  already running a Qdrant cluster — the seam ADR-0001 reserved for exactly this.
+  - `app/data/vectorstore/base.py` — new `VectorStore` abstract base (`upsert`/`search`/
+    `has_vectors`/`embedded_chunk_ids`, keyed by `chat_id`+`model_id`); `PgvectorStore` wraps the
+    existing SQL unchanged, `QdrantStore` is the new opt-in adapter (one filtered collection,
+    `chat_id`/`model_id` as indexed payload fields — the same no-cross-chat/no-cross-model-mixing
+    invariant as the SQL `WHERE`, ADR-0008).
+  - `build_vector_store(settings, session)` (`app/data/vectorstore/registry.py`) selects the active
+    backend from `VECTOR_STORE` (`pgvector` default, `qdrant` opt-in) — mirrors the AI-provider
+    registry's config-gated-registration pattern (ADR-0006); business logic never names a concrete
+    vector-store backend.
+  - `ChunkRepository` now takes a `VectorStore` in its constructor and delegates every vector
+    operation to it; `bulk_create_chunks` (chunk text) is unchanged — text always lives in Postgres
+    regardless of which backend stores the embeddings.
+  - New settings: `VECTOR_STORE`, `QDRANT_URL`, `QDRANT_API_KEY` — a cross-field validator rejects
+    `VECTOR_STORE=qdrant` without a `QDRANT_URL`. No Postgres schema change; no Alembic migration.
+  - Tests: `build_vector_store` backend-selection unit tests, `QdrantStore` adapter unit tests
+    (mocked `AsyncQdrantClient` — payload filter shape, cosine-score-to-distance conversion,
+    collection/payload-index bootstrap, scroll pagination), `Settings` validator tests.
 
 ### Fixed
 - **WCAG AA color-contrast failures** (Roadmap — accessibility + performance audit): a systematic

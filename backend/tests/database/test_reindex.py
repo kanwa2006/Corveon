@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.data.models.chunk import ChunkEmbedding
 from app.data.repositories.chunk_repository import ChunkRepository
 from app.data.rls import set_rls_user
+from app.data.vectorstore.registry import build_vector_store
 from app.ingestion.embeddings import get_embedding_model
 from app.workers.tasks import ingest_document, reindex_chat_chunks
 from httpx import AsyncClient
@@ -54,7 +55,12 @@ async def _upload_and_ingest(
     settings = get_settings()
     embedding_model = get_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE)
     await ingest_document(
-        {"db": app.state.db, "storage": app.state.storage, "embedding_model": embedding_model},
+        {
+            "db": app.state.db,
+            "storage": app.state.storage,
+            "embedding_model": embedding_model,
+            "settings": settings,
+        },
         job_id=job_id,
         document_id=document_id,
         chat_id=chat_id,
@@ -69,7 +75,7 @@ async def test_reindex_rejects_a_model_id_the_worker_is_not_loaded_with(app) -> 
     embedding_model = get_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE)
     with pytest.raises(ValueError, match="cannot reindex to"):
         await reindex_chat_chunks(
-            {"embedding_model": embedding_model, "db": app.state.db},
+            {"embedding_model": embedding_model, "db": app.state.db, "settings": settings},
             chat_id=str(uuid.uuid4()),
             user_id=str(uuid.uuid4()),
             model_id="some-other-model-nobody-loaded",
@@ -88,7 +94,7 @@ async def test_reindex_is_a_noop_when_every_chunk_already_has_an_embedding(
     settings = get_settings()
     embedding_model = get_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE)
     await reindex_chat_chunks(
-        {"db": app.state.db, "embedding_model": embedding_model},
+        {"db": app.state.db, "embedding_model": embedding_model, "settings": settings},
         chat_id=chat_id,
         user_id=user_id,
         model_id=settings.EMBEDDING_MODEL_ID,
@@ -96,7 +102,7 @@ async def test_reindex_is_a_noop_when_every_chunk_already_has_an_embedding(
 
     async for session in app.state.db.session():
         await set_rls_user(session, uuid.UUID(user_id))
-        chunk_repo = ChunkRepository(session)
+        chunk_repo = ChunkRepository(session, build_vector_store(settings, session))
         remaining = await chunk_repo.list_chunks_missing_embedding(
             chat_id=uuid.UUID(chat_id), model_id=settings.EMBEDDING_MODEL_ID
         )
@@ -134,7 +140,7 @@ async def test_reindex_embeds_chunks_missing_an_embedding(
     settings = get_settings()
     embedding_model = get_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE)
     await reindex_chat_chunks(
-        {"db": app.state.db, "embedding_model": embedding_model},
+        {"db": app.state.db, "embedding_model": embedding_model, "settings": settings},
         chat_id=chat_id,
         user_id=user_id,
         model_id=settings.EMBEDDING_MODEL_ID,
@@ -142,7 +148,7 @@ async def test_reindex_embeds_chunks_missing_an_embedding(
 
     async for session in app.state.db.session():
         await set_rls_user(session, uuid.UUID(user_id))
-        chunk_repo = ChunkRepository(session)
+        chunk_repo = ChunkRepository(session, build_vector_store(settings, session))
         remaining = await chunk_repo.list_chunks_missing_embedding(
             chat_id=uuid.UUID(chat_id), model_id=settings.EMBEDDING_MODEL_ID
         )

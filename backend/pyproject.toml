@@ -38,6 +38,7 @@ dependencies = [
   "pgvector>=0.3",                  # Python bindings for pgvector types
   "redis>=5.0",
   "arq>=0.26",
+  "qdrant-client>=1.10",            # optional vector-store alternative (ADR-0022)
   # ── Auth / security ───────────────────────────────────────
   "argon2-cffi>=23",
   "pyjwt>=2.9",

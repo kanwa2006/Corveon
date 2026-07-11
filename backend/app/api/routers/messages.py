@@ -31,6 +31,7 @@ from app.data.repositories.chat_repository import ChatRepository
 from app.data.repositories.chunk_repository import ChunkRepository
 from app.data.repositories.message_repository import MessageRepository
 from app.data.rls import commit_and_reapply_rls
+from app.data.vectorstore.registry import build_vector_store
 from app.export.message_export import render
 from app.orchestrator.chat_orchestrator import stream_response
 from app.providers.base import ChatMessage, ChatRole
@@ -74,7 +75,7 @@ async def send_message(
     await get_owned_chat_or_404(chat_repo, chat_id, current_user.id)
 
     message_repo = MessageRepository(db)
-    chunk_repo = ChunkRepository(db)
+    chunk_repo = ChunkRepository(db, build_vector_store(settings, db))
 
     await message_repo.create(chat_id=chat_id, role=MessageRole.USER, content=payload.content)
     # set_config(..., true) is transaction-local (ADR-0013) — this commit

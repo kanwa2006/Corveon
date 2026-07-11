@@ -29,6 +29,7 @@ from app.data.repositories.chunk_repository import ChunkRepository
 from app.data.repositories.document_repository import DocumentRepository
 from app.data.repositories.job_repository import JobRepository
 from app.data.rls import commit_and_reapply_rls, set_rls_user
+from app.data.vectorstore.registry import build_vector_store
 from app.ingestion.chunking import chunk_pages
 from app.ingestion.embeddings import EmbeddingModel
 from app.ingestion.parsing import (
@@ -61,6 +62,7 @@ async def run_ingestion(
     db: Database,
     storage: ObjectStorage,
     embedding_model: EmbeddingModel,
+    settings: Settings,
     job_id: uuid.UUID,
     document_id: uuid.UUID,
     chat_id: uuid.UUID,
@@ -70,7 +72,7 @@ async def run_ingestion(
         await set_rls_user(session, user_id)
         job_repo = JobRepository(session)
         document_repo = DocumentRepository(session)
-        chunk_repo = ChunkRepository(session)
+        chunk_repo = ChunkRepository(session, build_vector_store(settings, session))
 
         job = await job_repo.get_by_id(job_id)
         document = await document_repo.get_by_id_for_chat(document_id, chat_id)
@@ -192,6 +194,7 @@ async def ingest_document(
         db=ctx["db"],
         storage=ctx["storage"],
         embedding_model=ctx["embedding_model"],
+        settings=ctx["settings"],
         job_id=uuid.UUID(job_id),
         document_id=uuid.UUID(document_id),
         chat_id=uuid.UUID(chat_id),
@@ -239,11 +242,12 @@ async def reindex_chat_chunks(
         )
 
     db: Database = ctx["db"]
+    settings: Settings = ctx["settings"]
     chat_uuid = uuid.UUID(chat_id)
     user_uuid = uuid.UUID(user_id)
     async for session in db.session():
         await set_rls_user(session, user_uuid)
-        chunk_repo = ChunkRepository(session)
+        chunk_repo = ChunkRepository(session, build_vector_store(settings, session))
         chunks = await chunk_repo.list_chunks_missing_embedding(
             chat_id=chat_uuid, model_id=model_id
         )

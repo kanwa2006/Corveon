@@ -15,7 +15,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     # ── Embeddings ────────────────────────────────────────────
     EMBEDDING_MODEL_ID: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DEVICE: str = "cpu"
+
+    # ── Vector store (ADR-0001, ADR-0022) ────────────────────
+    # pgvector (inside Postgres) is the default; Qdrant is an opt-in
+    # alternative for deployments past pgvector's comfort zone or already
+    # running a Qdrant cluster. Business logic never sees this choice — it
+    # only ever talks to app.data.vectorstore.base.VectorStore.
+    VECTOR_STORE: Literal["pgvector", "qdrant"] = "pgvector"
+    QDRANT_URL: str | None = None
+    QDRANT_API_KEY: str | None = None
 
     # ── AI providers — all optional (§23.1, ADR-0006) ────────
     GEMINI_API_KEYS: str | None = None
@@ -154,6 +163,12 @@ class Settings(BaseSettings):
                 "generate a real value with `openssl rand -hex 32`."
             )
         return value
+
+    @model_validator(mode="after")
+    def _qdrant_url_required_when_selected(self) -> Settings:
+        if self.VECTOR_STORE == "qdrant" and not self.QDRANT_URL:
+            raise ValueError("QDRANT_URL is required when VECTOR_STORE=qdrant.")
+        return self
 
     def _csv(self, raw: str | None) -> list[str]:
         if not raw:

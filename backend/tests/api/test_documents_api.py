@@ -52,6 +52,7 @@ async def _run_worker(app, job_id: str, document_id: str, chat_id: str, user_id:
         db=app.state.db,
         storage=app.state.storage,
         embedding_model=get_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE),
+        settings=settings,
         job_id=uuid.UUID(job_id),
         document_id=uuid.UUID(document_id),
         chat_id=uuid.UUID(chat_id),

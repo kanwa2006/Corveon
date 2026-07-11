@@ -52,6 +52,13 @@ come from the environment only — never code, never the database.
 | `EMBEDDING_MODEL_ID` | `BAAI/bge-small-en-v1.5` | **must produce 384-dim** to match `vector(384)` |
 | `EMBEDDING_DEVICE` | `cpu` | inference device |
 
+## Vector store (ADR-0001, ADR-0022)
+| Var | Default | Meaning |
+|---|---|---|
+| `VECTOR_STORE` | `pgvector` | `pgvector \| qdrant` — pgvector needs no further config; Qdrant is opt-in |
+| `QDRANT_URL` | — | Qdrant endpoint, e.g. `http://localhost:6333`. **Required** when `VECTOR_STORE=qdrant` |
+| `QDRANT_API_KEY` | — | optional, for a secured/cloud Qdrant instance |
+
 ## AI providers (all optional)
 | Var | Meaning |
 |---|---|
