@@ -27,5 +27,6 @@ once `Accepted`; to change a decision, add a new ADR that supersedes the old one
 | [0019](0019-pip-criteria-encoding.md) | Beers 2023 + STOPP/START v3 as pinned `pip_criteria` rows; nullable `medication_a_id` for START omissions | Accepted |
 | [0020](0020-guardrailed-explanation-narrative.md) | Guardrailed LLM narrative scoped to PIP + discrepancy findings only | Accepted |
 | [0021](0021-public-evidence-retrieval-agent.md) | `PublicEvidenceAgent` reuses evidence connectors for the RAG-public-evidence routing branch | Accepted |
+| [0022](0022-qdrant-pluggable-vector-store.md) | Qdrant as a config-selected alternative to pgvector, behind the `VectorStore` seam ADR-0001 reserved | Accepted |
 
 New ADRs use [`_template.md`](_template.md) and the next sequential number.

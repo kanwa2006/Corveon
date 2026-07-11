@@ -273,8 +273,26 @@ contract. No application code. Self-review complete.
   component tests for the new citation chips.
 - Org-trusted sources and full multi-agent verification remain future work.
 
+### Enterprise path — Qdrant vector-store option ✅
+- ✅ New `VectorStore` abstraction (`app/data/vectorstore/`, ADR-0022) behind the seam ADR-0001
+  reserved: `ChunkRepository` now delegates every vector-layer operation (`upsert`/`search`/
+  `has_vectors`/`embedded_chunk_ids`) to an injected backend instead of querying pgvector directly.
+- ✅ `PgvectorStore` (default) wraps the existing SQL unchanged; `QdrantStore` (opt-in,
+  `VECTOR_STORE=qdrant`) is a new alternative — one filtered collection, `chat_id`/`model_id` as
+  indexed payload fields, same no-cross-chat/no-cross-model-mixing invariant as the SQL `WHERE`
+  (ADR-0008).
+- ✅ Config-gated selection (`VECTOR_STORE`, `QDRANT_URL`, `QDRANT_API_KEY`) mirrors the AI-provider
+  registry pattern (ADR-0006) — business logic (search endpoint, RAG retrieval, evidence retrieval,
+  ingestion, reindex) never names a concrete vector-store backend.
+- ✅ No Postgres schema change — Qdrant stores its own copy of the vectors externally; switching
+  backends needs the existing reindex job re-run, same posture as changing the embedding model.
+- ✅ Tests: `build_vector_store` backend-selection tests, `QdrantStore` adapter unit tests (mocked
+  client — payload filter shape, score-to-distance conversion, collection bootstrap, scroll
+  pagination), `Settings` cross-field validation (`QDRANT_URL` required when selected).
+- SSO, read replicas, and on-prem/Ollama hardening remain future work.
+
 ### Later phases — not yet implemented
-- Enterprise path (Qdrant option, SSO, read replicas, on-prem/Ollama).
+- SSO, read replicas, on-prem/Ollama hardening (remaining "Enterprise path" items).
 
 ## Cross-cutting, always-on
 Per-feature Definition of Done · docs updated per PR · ADR per resolved decision · golden tests for

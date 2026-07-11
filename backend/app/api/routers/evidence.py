@@ -31,6 +31,7 @@ from app.data.repositories.chunk_repository import ChunkRepository
 from app.data.repositories.evidence_repository import EvidenceRepository
 from app.data.repositories.message_repository import MessageRepository
 from app.data.rls import commit_and_reapply_rls
+from app.data.vectorstore.registry import build_vector_store
 from app.evidence.verification_service import run_verification
 from app.providers.budget import LLMCallBudgetExceededError
 from app.providers.registry import NoProviderAvailableError
@@ -72,7 +73,7 @@ async def verify_message(
     # would otherwise silently reset the RLS GUC for every query/write below.
     await commit_and_reapply_rls(db, current_user.id)
 
-    chunk_repo = ChunkRepository(db)
+    chunk_repo = ChunkRepository(db, build_vector_store(settings, db))
 
     async def event_stream() -> AsyncIterator[dict[str, str]]:
         try:

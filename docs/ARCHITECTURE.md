@@ -111,6 +111,16 @@ External-connector responses are cached in Redis, not a Postgres table — see
 Embedding dimension `vector(384)` matches bge-small-en / e5-small. Every similarity query filters
 by **both** `chat_id` and `model_id` (ADR-0008 / §23.4); model changes require a reindex job.
 
+**Pluggable vector store** (`app/data/vectorstore/`, ADR-0001, ADR-0022): pgvector (above) is the
+default; **Qdrant** is a config-selected (`VECTOR_STORE=qdrant`) alternative for enterprise
+deployments past pgvector's ~10M-vector comfort zone, or already running a Qdrant cluster.
+`ChunkRepository` depends only on a `VectorStore` interface (`upsert`/`search`/`has_vectors`/
+`embedded_chunk_ids`, keyed by `chat_id`+`model_id` exactly like the SQL predicate above) — business
+logic (search endpoint, RAG retrieval, evidence retrieval, ingestion, reindex) never names a
+concrete vector-store backend, mirroring the "business logic never names a provider" AI-provider
+pattern (ADR-0006). Chunk
+*text* always lives in Postgres regardless of which backend stores the embeddings.
+
 ## 5. Per-chat isolation (defense in depth — §10.2)
 1. **Application guard** — every query passes the active `chat_id`.
 2. **Postgres Row-Level Security** — policies keyed on `chat_id`/`user_id`.

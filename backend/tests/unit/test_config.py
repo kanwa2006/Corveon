@@ -67,3 +67,35 @@ def test_provider_key_pool_parses_csv() -> None:
         GEMINI_API_KEYS="key-one, key-two ,key-three",
     )
     assert settings.gemini_api_key_pool == ["key-one", "key-two", "key-three"]
+
+
+@pytest.mark.unit
+def test_settings_defaults_to_pgvector() -> None:
+    settings = Settings(
+        JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+    )
+    # ADR-0001/ADR-0022: pgvector is the default, no config required for it.
+    assert settings.VECTOR_STORE == "pgvector"
+
+
+@pytest.mark.unit
+def test_settings_rejects_qdrant_vector_store_without_a_url() -> None:
+    with pytest.raises(ValidationError, match="QDRANT_URL is required"):
+        Settings(
+            JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+            VECTOR_STORE="qdrant",
+        )
+
+
+@pytest.mark.unit
+def test_settings_accepts_qdrant_vector_store_with_a_url() -> None:
+    settings = Settings(
+        JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+        VECTOR_STORE="qdrant",
+        QDRANT_URL="http://localhost:6333",
+    )
+    assert settings.VECTOR_STORE == "qdrant"
+    assert settings.QDRANT_URL == "http://localhost:6333"
