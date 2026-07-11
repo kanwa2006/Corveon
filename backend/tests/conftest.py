@@ -25,6 +25,19 @@ def _test_settings_env() -> None:
     os.environ.setdefault("CORVEON_ENV", "test")
     os.environ.setdefault("LOG_FORMAT", "console")
     os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-not-for-production-use-32-bytes-min")
+    # A developer's populated backend/.env (real provider keys, per
+    # docs/SETUP.md) must not leak into the test app: tests asserting
+    # no-provider behavior would fail locally while passing in CI. Env vars
+    # outrank the .env file in pydantic-settings, so forcing these empty
+    # pins every test run — local or CI — to the no-providers-configured
+    # state; tests that need keys pass them to Settings() explicitly.
+    for key_pool_var in (
+        "GEMINI_API_KEYS",
+        "ANTHROPIC_API_KEYS",
+        "OPENAI_API_KEYS",
+        "OPENROUTER_API_KEYS",
+    ):
+        os.environ[key_pool_var] = ""
     get_settings.cache_clear()
 
 

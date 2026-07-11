@@ -49,10 +49,17 @@ def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 @pytest.mark.unit
-def test_provider_key_pool_parsing_is_empty_when_unset() -> None:
+def test_provider_key_pool_parsing_is_empty_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Isolate from BOTH the ambient environment AND a local backend/.env —
+    # a developer's real GEMINI_API_KEYS would otherwise populate the pool
+    # and fail this "unset" assertion (same pattern as
+    # test_settings_requires_database_url above).
+    monkeypatch.delenv("GEMINI_API_KEYS", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEYS", raising=False)
     settings = Settings(
         JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
         DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+        _env_file=None,  # type: ignore[call-arg]
     )
     # Absent providers are a normal, valid state (ADR-0006) — never an error.
     assert settings.gemini_api_key_pool == []
