@@ -1,7 +1,9 @@
 """Medication-Safety Engine endpoint (docs/API.md — Evidence & medication,
-blueprint §9). Phase 1 only: normalization + DDI detection. ``POST`` is 202
-+ SSE: a ``medication`` event per normalized/persisted medication, an
-``interaction`` event per DDI finding, a final ``done`` event, or an
+blueprint §9). Normalization + DDI detection (Phase 1) and renal/dose
+checks (Phase 2, ADR-0005). ``POST`` is 202 + SSE: a ``medication`` event
+per normalized/persisted medication, an ``interaction`` event per DDI
+finding, a ``renal`` event per renal-dosing threshold finding (only when
+the request supplied renal parameters), a final ``done`` event, or an
 ``error`` event on a degraded-mode condition — same shape as
 ``POST /chats/{id}/verify`` (ADR-0007: the browser connects to this
 endpoint directly for SSE, authenticating via a stream ticket)."""
@@ -28,12 +30,17 @@ from app.api.schemas.medication import (
     MedicationAnalysisDoneEvent,
     MedicationAnalyzeRequest,
     MedicationEvent,
+    RenalFindingEvent,
 )
 from app.data.repositories.audit_log_repository import AuditLogRepository
 from app.data.repositories.chat_repository import ChatRepository
 from app.data.repositories.medication_repository import MedicationRepository
 from app.data.rls import commit_and_reapply_rls
-from app.medication.analysis_service import NormalizedMedicationResult, run_medication_analysis
+from app.medication.analysis_service import (
+    InteractionFindingResult,
+    NormalizedMedicationResult,
+    run_medication_analysis,
+)
 from app.providers.budget import LLMCallBudgetExceededError
 from app.providers.registry import NoProviderAvailableError
 
@@ -68,12 +75,14 @@ async def analyze_medications(
     await commit_and_reapply_rls(db, current_user.id)
 
     medication_repo = MedicationRepository(db)
+    renal_params = payload.renal_parameters()
 
     async def event_stream() -> AsyncIterator[dict[str, str]]:
         try:
             async for item in run_medication_analysis(
                 chat_id=chat_id,
                 raw_text=payload.raw_text,
+                renal_params=renal_params,
                 provider_registry=provider_registry,
                 rxnorm_client=rxnorm_client,
                 openfda_ddi_client=openfda_ddi_client,
@@ -95,7 +104,7 @@ async def analyze_medications(
                             frequency=item.frequency,
                         ).model_dump_json(),
                     }
-                else:
+                elif isinstance(item, InteractionFindingResult):
                     yield {
                         "event": "interaction",
                         "data": InteractionFindingEvent(
@@ -107,6 +116,20 @@ async def analyze_medications(
                             rule_id=item.rule_id,
                             explanation=item.explanation,
                             provenance=item.provenance,
+                        ).model_dump_json(),
+                    }
+                else:
+                    yield {
+                        "event": "renal",
+                        "data": RenalFindingEvent(
+                            id=item.id,
+                            medication_id=item.medication_id,
+                            crcl_ml_min=item.crcl_ml_min,
+                            egfr_ml_min=item.egfr_ml_min,
+                            threshold_ml_min=item.threshold_ml_min,
+                            severity=item.severity,
+                            rule_id=item.rule_id,
+                            explanation=item.explanation,
                         ).model_dump_json(),
                     }
             await db.commit()

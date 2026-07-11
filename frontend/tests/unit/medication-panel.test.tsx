@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MedicationPanel } from '@/components/chats/medication-panel';
-import type { InteractionFinding, NormalizedMedication } from '@/lib/api/medication';
+import type { InteractionFinding, NormalizedMedication, RenalFinding } from '@/lib/api/medication';
 
 const medicationA: NormalizedMedication = {
   id: 'm1',
@@ -35,6 +35,17 @@ const finding: InteractionFinding = {
   provenance: {},
 };
 
+const renalFinding: RenalFinding = {
+  id: 'r1',
+  medication_id: 'm1',
+  crcl_ml_min: 12.7,
+  egfr_ml_min: 17.9,
+  threshold_ml_min: 30.0,
+  severity: 'major',
+  rule_id: 'renal_threshold:warfarin',
+  explanation: 'Both equations are below threshold.',
+};
+
 describe('MedicationPanel', () => {
   it('renders a textarea and disabled button when idle with no input', () => {
     render(
@@ -42,6 +53,7 @@ describe('MedicationPanel', () => {
         status="idle"
         medications={[]}
         findings={[]}
+        renalFindings={[]}
         errorMessage={null}
         onAnalyze={vi.fn()}
         onReset={vi.fn()}
@@ -50,13 +62,14 @@ describe('MedicationPanel', () => {
     expect(screen.getByRole('button', { name: /check for interactions/i })).toBeDisabled();
   });
 
-  it('calls onAnalyze with the trimmed textarea value when clicked', () => {
+  it('calls onAnalyze with the trimmed textarea value and null renal params when the renal section is untouched', () => {
     const onAnalyze = vi.fn();
     render(
       <MedicationPanel
         status="idle"
         medications={[]}
         findings={[]}
+        renalFindings={[]}
         errorMessage={null}
         onAnalyze={onAnalyze}
         onReset={vi.fn()}
@@ -68,7 +81,7 @@ describe('MedicationPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /check for interactions/i }));
 
-    expect(onAnalyze).toHaveBeenCalledWith('metformin 500mg');
+    expect(onAnalyze).toHaveBeenCalledWith('metformin 500mg', null);
   });
 
   it('shows a progress indicator while streaming with no medications yet', () => {
@@ -77,6 +90,7 @@ describe('MedicationPanel', () => {
         status="streaming"
         medications={[]}
         findings={[]}
+        renalFindings={[]}
         errorMessage={null}
         onAnalyze={vi.fn()}
         onReset={vi.fn()}
@@ -91,6 +105,7 @@ describe('MedicationPanel', () => {
         status="streaming"
         medications={[medicationA, medicationB]}
         findings={[]}
+        renalFindings={[]}
         errorMessage={null}
         onAnalyze={vi.fn()}
         onReset={vi.fn()}
@@ -108,6 +123,7 @@ describe('MedicationPanel', () => {
         status="done"
         medications={[medicationA, medicationB]}
         findings={[finding]}
+        renalFindings={[]}
         errorMessage={null}
         onAnalyze={vi.fn()}
         onReset={vi.fn()}
@@ -119,12 +135,31 @@ describe('MedicationPanel', () => {
     expect(screen.getByText('Increased bleeding risk.')).toBeInTheDocument();
   });
 
+  it('renders a renal finding with CrCl/eGFR values and severity', () => {
+    render(
+      <MedicationPanel
+        status="done"
+        medications={[medicationA]}
+        findings={[]}
+        renalFindings={[renalFinding]}
+        errorMessage={null}
+        onAnalyze={vi.fn()}
+        onReset={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Warfarin', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByText(/CrCl 12\.7 mL\/min/)).toBeInTheDocument();
+    expect(screen.getByText(/eGFR 17\.9 mL\/min/)).toBeInTheDocument();
+    expect(screen.getByText('Both equations are below threshold.')).toBeInTheDocument();
+  });
+
   it('shows a no-interactions message when done with medications but no findings', () => {
     render(
       <MedicationPanel
         status="done"
         medications={[medicationA]}
         findings={[]}
+        renalFindings={[]}
         errorMessage={null}
         onAnalyze={vi.fn()}
         onReset={vi.fn()}
@@ -139,6 +174,7 @@ describe('MedicationPanel', () => {
         status="error"
         medications={[]}
         findings={[]}
+        renalFindings={[]}
         errorMessage="No AI provider is currently reachable."
         onAnalyze={vi.fn()}
         onReset={vi.fn()}
@@ -154,6 +190,7 @@ describe('MedicationPanel', () => {
         status="done"
         medications={[medicationA]}
         findings={[]}
+        renalFindings={[]}
         errorMessage={null}
         onAnalyze={vi.fn()}
         onReset={onReset}
@@ -161,5 +198,87 @@ describe('MedicationPanel', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /start over/i }));
     expect(onReset).toHaveBeenCalledOnce();
+  });
+
+  describe('renal parameters', () => {
+    it('reveals renal fields when the checkbox is checked, hidden by default', () => {
+      render(
+        <MedicationPanel
+          status="idle"
+          medications={[]}
+          findings={[]}
+          renalFindings={[]}
+          errorMessage={null}
+          onAnalyze={vi.fn()}
+          onReset={vi.fn()}
+        />,
+      );
+      expect(screen.queryByText(/age \(years\)/i)).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: /include renal function/i }));
+      expect(screen.getByText(/age \(years\)/i)).toBeInTheDocument();
+    });
+
+    it('disables the trigger until all renal fields are filled once the checkbox is checked', () => {
+      render(
+        <MedicationPanel
+          status="idle"
+          medications={[]}
+          findings={[]}
+          renalFindings={[]}
+          errorMessage={null}
+          onAnalyze={vi.fn()}
+          onReset={vi.fn()}
+        />,
+      );
+      fireEvent.change(screen.getByPlaceholderText(/list medications/i), {
+        target: { value: 'apixaban 5mg' },
+      });
+      fireEvent.click(screen.getByRole('checkbox', { name: /include renal function/i }));
+
+      const trigger = screen.getByRole('button', { name: /check for interactions/i });
+      expect(trigger).toBeDisabled();
+
+      fireEvent.change(screen.getByLabelText(/age \(years\)/i), { target: { value: '85' } });
+      fireEvent.change(screen.getByLabelText(/weight \(kg\)/i), { target: { value: '50' } });
+      fireEvent.change(screen.getByLabelText(/serum creatinine/i), { target: { value: '3.0' } });
+      fireEvent.change(screen.getByLabelText(/height \(cm\)/i), { target: { value: '170' } });
+
+      expect(trigger).toBeEnabled();
+    });
+
+    it('calls onAnalyze with the entered renal parameters', () => {
+      const onAnalyze = vi.fn();
+      render(
+        <MedicationPanel
+          status="idle"
+          medications={[]}
+          findings={[]}
+          renalFindings={[]}
+          errorMessage={null}
+          onAnalyze={onAnalyze}
+          onReset={vi.fn()}
+        />,
+      );
+      fireEvent.change(screen.getByPlaceholderText(/list medications/i), {
+        target: { value: 'apixaban 5mg' },
+      });
+      fireEvent.click(screen.getByRole('checkbox', { name: /include renal function/i }));
+      fireEvent.change(screen.getByLabelText(/age \(years\)/i), { target: { value: '85' } });
+      fireEvent.change(screen.getByLabelText(/weight \(kg\)/i), { target: { value: '50' } });
+      fireEvent.change(screen.getByLabelText(/^sex/i), { target: { value: 'male' } });
+      fireEvent.change(screen.getByLabelText(/serum creatinine/i), { target: { value: '3.0' } });
+      fireEvent.change(screen.getByLabelText(/height \(cm\)/i), { target: { value: '170' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /check for interactions/i }));
+
+      expect(onAnalyze).toHaveBeenCalledWith('apixaban 5mg', {
+        age_years: 85,
+        weight_kg: 50,
+        sex: 'male',
+        serum_creatinine_mg_dl: 3.0,
+        height_cm: 170,
+      });
+    });
   });
 });

@@ -14,8 +14,8 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
   structured entries, normalizes each to RxCUI via RxNorm, persists them, then runs a deterministic
   DDI rules engine and persists its findings — `POST /chats/{id}/medications/analyze` (SSE, streams
   one result at a time as it completes). Strictly scoped to normalization + DDI detection; renal
-  checks, Beers/STOPP-START screens, discrepancy classification, and guardrailed explanations are
-  explicitly later phases of this same engine, not started — see
+  checks (Phase 2, below), Beers/STOPP-START screens, discrepancy classification, and guardrailed
+  explanations are explicitly later phases of this same engine — see
   [docs/ROADMAP.md](docs/ROADMAP.md) Month 6-12 for the full done/deferred breakdown.
   - Data model: `medications` / `medication_findings` / `drug_data_snapshots` / `drug_interactions`
     (migration `0006`); the chat-scoped pair gets the same triple-enforced isolation as every other
@@ -51,6 +51,34 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
     interactions), database RLS isolation, API (happy path, degraded mode), unit tests for the
     loader/normalizer/rules engine/openFDA client, frontend unit/hook/component tests, plus a live
     browser verification (real Gemini parse + real RxNav lookups) against the running backend.
+- **Medication-Safety Engine, Phase 2: renal/dose checks** (Roadmap Month 6-12, ADR-0005): extends
+  the existing `POST /chats/{id}/medications/analyze` endpoint (no new endpoint) with optional
+  renal parameters and a `renal` SSE event — deterministic Cockcroft-Gault CrCl + 2021 race-free
+  CKD-EPI eGFR (de-indexed to the patient's own body surface area), checked against a small,
+  documented table of threshold-sensitive drug classes (DOACs, aminoglycosides, vancomycin).
+  - `app/medication/renal.py` — both equations implemented rather than one, since the clinical
+    standard is actively in transition (ADR-0005); reference values cross-checked against the
+    NKF/ASN CKD-EPI 2021 calculator and standard Cockcroft-Gault worked examples before being
+    pinned as golden tests. No LLM involvement — purely deterministic, like the DDI rules engine.
+  - A finding's severity distinguishes clear renal impairment (both equations agree the patient is
+    below a drug's threshold, `major`) from genuine equation **divergence** (the two equations land
+    on opposite sides of the threshold, `moderate`) — the exact "hedge a standard in flux" case
+    ADR-0005 exists to surface, never silently resolved toward one equation.
+  - Renal parameters (age/weight/sex/serum creatinine/height) are optional and all-or-nothing on
+    the request — a `model_validator` rejects a partial set with a `422` rather than silently
+    skipping renal checks, so an incomplete submission never fails quietly with no explanation.
+    Omitting all five is the normal opt-out case (an honest "insufficient data" state, ADR-0005).
+  - `InteractionSource` gains a `calculated` member (migration `0007`, `ALTER TYPE ... ADD VALUE`)
+    for formula-derived findings, alongside the existing `ddinter`/`openfda_label` external-lookup
+    sources — the enum's Phase-1 name is kept (not renamed) to avoid touching unrelated Phase 1
+    code; its docstring now explains the reuse.
+  - Frontend: an optional, collapsible renal-parameter input section and renal-finding cards
+    (CrCl/eGFR/threshold values, severity badge) in the existing medication panel — no new page.
+  - Tests written alongside the feature: golden tests for both equations plus the threshold/
+    divergence rules (11 cases), API tests (renal finding present when parameters are supplied,
+    absent when omitted, `422` on a partial set), frontend unit/component tests, and new Playwright
+    e2e coverage using reusable fixtures (`tests/e2e/fixtures/medications.ts`) rather than inline
+    ad-hoc test strings.
 - **Blueprint reconciliation** (Roadmap Month 1 closeout): saved the master implementation
   blueprint verbatim to `docs/specifications/corveon-master-implementation-blueprint-v1.0.md` as the
   permanent in-repo reference, then closed every concrete gap the reconciliation against the current

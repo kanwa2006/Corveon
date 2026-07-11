@@ -141,18 +141,34 @@ shown once it resolves to a real record at its source (fabricated-citation guard
 `app/evidence/citation_verification.py`) — never LLM-generated.
 
 ## 8. Medication-Safety Engine
-Phase 1 implemented Month 6-12 (`app/medication/`, `POST /chats/{id}/medications/analyze` — see
-[API.md](API.md)): free-text medication parsing (LLM, guardrailed to extract only name/dose/route/
-frequency already present in the text — never infers or adds a fact), RxNorm/RxCUI normalization,
-and deterministic drug-drug interaction detection. **The rules engine is the source of truth**
-(CLAUDE.md §6) — DDI detection makes no LLM call. DDInter 2.0 (ADR-0004) is the primary source,
-loaded as a pinned, checksummed snapshot (`app/medication/ddinter_loader.py`, never fetched at
-request time, [ADR-0018](adr/0018-ddinter-loader-location-and-no-bundled-dataset.md)); openFDA
-label-derived text is the fallback for pairs the snapshot doesn't cover, surfaced as the FDA's own
-label language (`FindingSeverity.UNCLASSIFIED`) rather than a synthesized severity the source didn't
-provide. Renal/dose checks (ADR-0005), Beers 2023 + STOPP/START v3 screens, medication-discrepancy
-classification, and guardrailed LLM explanations are later phases of this same engine, not yet
-implemented — see [ROADMAP.md](ROADMAP.md).
+Phase 1 + Phase 2 implemented Month 6-12 (`app/medication/`, `POST /chats/{id}/medications/analyze`
+— see [API.md](API.md)): free-text medication parsing (LLM, guardrailed to extract only name/dose/
+route/frequency already present in the text — never infers or adds a fact), RxNorm/RxCUI
+normalization, deterministic drug-drug interaction detection (Phase 1), and deterministic
+renal-dosing threshold checks (Phase 2). **The rules engine is the source of truth** (CLAUDE.md §6)
+— neither DDI detection nor renal checks make an LLM call; the free-text parsing step is the
+pipeline's only one, regardless of which checks run after it.
+
+DDInter 2.0 (ADR-0004) is the primary DDI source, loaded as a pinned, checksummed snapshot
+(`app/medication/ddinter_loader.py`, never fetched at request time,
+[ADR-0018](adr/0018-ddinter-loader-location-and-no-bundled-dataset.md)); openFDA label-derived text
+is the fallback for pairs the snapshot doesn't cover, surfaced as the FDA's own label language
+(`FindingSeverity.UNCLASSIFIED`) rather than a synthesized severity the source didn't provide.
+
+Renal checks (`app/medication/renal.py`, ADR-0005) implement **both** kidney-function equations
+rather than picking one, since the clinical standard is actively in transition: Cockcroft-Gault CrCl
+(the historical FDA/label standard) and the 2021 race-free CKD-EPI eGFR (de-indexed to the patient's
+own body surface area for dosing use). Renal parameters are optional and all-or-nothing on the
+request — omitting all five skips renal checks entirely (an honest "insufficient data" state);
+supplying a partial set is a `422`, not a silent skip. Only a small, documented set of
+threshold-sensitive drug classes (DOACs, aminoglycosides, vancomycin — the blueprint's own named
+examples) are checked; a finding's severity distinguishes clear impairment (both equations agree)
+from the genuine "standard in flux" case ADR-0005 exists for (the two equations land on opposite
+sides of the decision threshold).
+
+Beers 2023 + STOPP/START v3 screens, medication-discrepancy classification, and guardrailed LLM
+explanations are later phases of this same engine, not yet implemented — see
+[ROADMAP.md](ROADMAP.md).
 
 ## 9. Deployment topology (free-tier MVP)
 Vercel (frontend static/RSC) · Fly.io/Render (FastAPI API **and** ARQ worker — the persistent

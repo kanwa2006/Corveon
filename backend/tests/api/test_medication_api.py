@@ -234,6 +234,107 @@ async def test_analyze_streams_an_interaction_finding_from_openfda_fallback(
 
 
 @pytest.mark.asyncio
+async def test_analyze_rejects_partial_renal_parameters(
+    client: AsyncClient, auth_headers: AuthHeaders
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+    response = await client.post(
+        f"/api/v1/chats/{chat_id}/medications/analyze",
+        json={"raw_text": "apixaban 5mg", "age_years": 85, "weight_kg": 50},
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_analyze_streams_a_renal_finding_when_renal_parameters_are_supplied(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+
+    app.dependency_overrides[get_provider_registry] = lambda: _provider_registry(
+        [
+            '[{"raw_text": "apixaban 5mg BID", "name": "apixaban", "dose": "5mg", '
+            '"route": null, "frequency": "twice daily"}]'
+        ]
+    )
+    app.dependency_overrides[get_rxnorm_client] = lambda: _FakeRxNormClient(
+        RxNormMatch(rxcui="1364430", canonical_name="apixaban")
+    )
+    app.dependency_overrides[get_openfda_ddi_client] = lambda: _FakeOpenFdaDdiClient()
+    try:
+        async with client.stream(
+            "POST",
+            f"/api/v1/chats/{chat_id}/medications/analyze",
+            json={
+                "raw_text": "apixaban 5mg BID",
+                # Severely impaired renal function — both equations well
+                # below apixaban's 30 mL/min threshold.
+                "age_years": 85,
+                "weight_kg": 50,
+                "sex": "male",
+                "serum_creatinine_mg_dl": 3.0,
+                "height_cm": 170,
+            },
+            headers=headers,
+        ) as response:
+            assert response.status_code == 202
+            raw = await response.aread()
+    finally:
+        app.dependency_overrides.pop(get_provider_registry, None)
+        app.dependency_overrides.pop(get_rxnorm_client, None)
+        app.dependency_overrides.pop(get_openfda_ddi_client, None)
+
+    events = _parse_sse(raw.decode())
+    renal_events = [json.loads(data) for kind, data in events if kind == "renal"]
+    assert len(renal_events) == 1
+    assert renal_events[0]["severity"] == "major"
+    assert renal_events[0]["threshold_ml_min"] == 30.0
+    assert renal_events[0]["crcl_ml_min"] < 30
+    assert renal_events[0]["egfr_ml_min"] < 30
+
+
+@pytest.mark.asyncio
+async def test_analyze_emits_no_renal_events_when_renal_parameters_are_omitted(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+
+    app.dependency_overrides[get_provider_registry] = lambda: _provider_registry(
+        [
+            '[{"raw_text": "apixaban 5mg BID", "name": "apixaban", "dose": "5mg", '
+            '"route": null, "frequency": "twice daily"}]'
+        ]
+    )
+    app.dependency_overrides[get_rxnorm_client] = lambda: _FakeRxNormClient(
+        RxNormMatch(rxcui="1364430", canonical_name="apixaban")
+    )
+    app.dependency_overrides[get_openfda_ddi_client] = lambda: _FakeOpenFdaDdiClient()
+    try:
+        async with client.stream(
+            "POST",
+            f"/api/v1/chats/{chat_id}/medications/analyze",
+            json={"raw_text": "apixaban 5mg BID"},
+            headers=headers,
+        ) as response:
+            raw = await response.aread()
+    finally:
+        app.dependency_overrides.pop(get_provider_registry, None)
+        app.dependency_overrides.pop(get_rxnorm_client, None)
+        app.dependency_overrides.pop(get_openfda_ddi_client, None)
+
+    events = _parse_sse(raw.decode())
+    renal_events = [json.loads(data) for kind, data in events if kind == "renal"]
+    assert renal_events == []
+    done_events = [json.loads(data) for kind, data in events if kind == "done"]
+    assert len(done_events) == 1
+
+
+@pytest.mark.asyncio
 async def test_analyze_degrades_gracefully_with_no_provider_reachable(
     client: AsyncClient, auth_headers: AuthHeaders, app
 ) -> None:
