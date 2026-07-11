@@ -29,8 +29,8 @@ _SAMPLE_CSV = (
     "stopp_v3,TEST-S1,nsaid,peptic ulcer,avoid,"
     "NSAIDs increase GI bleeding risk with a history of peptic ulcer disease.,"
     "Avoid; consider acetaminophen instead.,moderate\n"
-    "start_v3,TEST-T1,bisphosphonate|calcium and vitamin d,osteoporosis,start_consider,"
-    "Bone-protective therapy reduces fracture risk in osteoporosis.,"
+    "start_v3,TEST-T1,bisphosphonate|calcium and vitamin d,pip-loader-fixture-condition,"
+    "start_consider,Bone-protective therapy reduces fracture risk in osteoporosis.,"
     "Consider starting if not contraindicated.,moderate\n"
 )
 

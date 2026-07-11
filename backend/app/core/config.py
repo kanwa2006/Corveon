@@ -122,12 +122,22 @@ class Settings(BaseSettings):
     EVIDENCE_CACHE_TTL_SECONDS: int = 86400
 
     # ── Medication-Safety Engine (data/loaders/README.md) ───────
-    # DDInter 2.0 is a pinned, checksummed local snapshot, not a live API
-    # (ADR-0004) — never fetched at request time. Blank means "no snapshot
-    # imported yet"; the DDI rules engine then relies solely on the openFDA
-    # label-derived fallback for that request (absence is normal, same
-    # posture as an unconfigured AI provider, §23.1).
+    # Pinned, checksummed local snapshots, never fetched at request time
+    # (ADR-0004, ADR-0019). Blank *_SNAPSHOT_PATH means "no snapshot
+    # imported yet" for that source (DDI detection then relies solely on
+    # the openFDA label-derived fallback; PIP screening simply has no
+    # criteria to check) — absence is normal, same posture as an
+    # unconfigured AI provider (§23.1). ``app/medication/snapshot_sync.py``
+    # reads these to reproducibly (re)import each configured source; a
+    # path set without its paired version is a configuration error, since
+    # an automated import needs an explicit, reviewed version label, never
+    # one inferred from file content or mtime.
     DDINTER_SNAPSHOT_PATH: str | None = None
+    DDINTER_SNAPSHOT_VERSION: str | None = None
+    BEERS_2023_SNAPSHOT_PATH: str | None = None
+    BEERS_2023_SNAPSHOT_VERSION: str | None = None
+    STOPP_START_V3_SNAPSHOT_PATH: str | None = None
+    STOPP_START_V3_SNAPSHOT_VERSION: str | None = None
 
     # ── Observability ─────────────────────────────────────────
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None

@@ -195,6 +195,16 @@ introduces a medication name outside the finding's own set, a number absent from
 data, an escalation/severity word, or an unlicensed clinical-directive phrase. A finding's
 `explanation` is always shown regardless of whether its `narrative` passed.
 
+**Reproducible snapshot automation** (`app/medication/snapshot_sync.py`, ADR-0019) wires a
+`*_SNAPSHOT_PATH`/`*_SNAPSHOT_VERSION` environment-variable pair per pinned source (DDInter 2.0,
+Beers 2023, STOPP/START v3) to the existing per-source loaders, replacing "an operator manually
+invokes 2-3 different CLI scripts with a hand-typed version each time" with one idempotent sync
+step: a source already imported at its pinned version + checksum is left untouched, so running it
+repeatedly (on every deploy, or via the `sync_pinned_snapshots` ARQ worker task) never re-imports or
+duplicates a snapshot. A configured path with no paired version raises loudly rather than importing
+under an inferred label — reproducibility requires an explicit, reviewed version, never one derived
+from file content or mtime.
+
 ## 9. Deployment topology (free-tier MVP)
 Vercel (frontend static/RSC) · Fly.io/Render (FastAPI API **and** ARQ worker — the persistent
 process that serves all SSE, ADR-0007) · Supabase/Neon (Postgres+pgvector) · Upstash (Redis) ·

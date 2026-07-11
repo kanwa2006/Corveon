@@ -219,9 +219,22 @@ contract. No application code. Self-review complete.
   loader tests, API tests, frontend unit/component tests, and Playwright e2e coverage (reusable
   fixtures for PIP-screening and previous-list test inputs).
 
+### Reproducible snapshot automation ✅
+- ✅ `*_SNAPSHOT_PATH`/`*_SNAPSHOT_VERSION` settings (DDInter 2.0, Beers 2023, STOPP/START v3) wired
+  to `app/medication/snapshot_sync.py` — an idempotent sync that reuses the existing per-source
+  loaders instead of an operator hand-invoking each one with a manually re-typed version.
+- ✅ `python -m app.medication.snapshot_sync` CLI + `sync_pinned_snapshots` ARQ worker task — same
+  logic, runnable as a shell step or triggered from a deploy pipeline / background job.
+- ✅ Idempotent and safe to run repeatedly: a source already imported at its pinned
+  version + checksum is left untouched (`already_current`); a source with no configured path is
+  `not_configured` (absence, not failure, §23.1); a configured path missing its paired version
+  raises loudly rather than importing under an inferred label.
+- ✅ Tests: not-configured / imported / idempotent-already-current / missing-version-configuration-
+  error, for both the DDInter and PIP-criteria loader paths.
+
 ### Later phases — not yet implemented
 - Multi-agent depth; enterprise path (Qdrant option, SSO, read replicas, on-prem/Ollama).
-- Accessibility + performance audits; reproducible snapshot automation.
+- Accessibility + performance audits.
 
 ## Cross-cutting, always-on
 Per-feature Definition of Done · docs updated per PR · ADR per resolved decision · golden tests for

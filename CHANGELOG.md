@@ -9,6 +9,20 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
 ## [Unreleased]
 
 ### Added
+- **Reproducible snapshot automation** (Roadmap, ADR-0019): `app/medication/snapshot_sync.py` wires
+  the `DDINTER_SNAPSHOT_PATH` setting — declared for this purpose but never actually read by any
+  import logic — plus two new equivalent pairs (`BEERS_2023_SNAPSHOT_PATH`/`_VERSION`,
+  `STOPP_START_V3_SNAPSHOT_PATH`/`_VERSION`) to the existing DDInter/PIP-criteria loaders. Replaces
+  "an operator manually invokes each loader's CLI by hand with a re-typed version every time" with
+  one idempotent sync step, runnable via `python -m app.medication.snapshot_sync` or the new
+  `sync_pinned_snapshots` ARQ worker task.
+  - A source already imported at its pinned version + checksum is reported `already_current` and
+    left untouched — safe to run on every deploy without ever re-importing or duplicating a
+    snapshot; a source with no configured path is `not_configured` (an absence, not a failure, same
+    posture as an unconfigured AI provider, §23.1); a configured path with no paired version raises
+    `SnapshotConfigurationError` rather than importing under an inferred/ambiguous label.
+  - Tests: not-configured / imported / idempotent-already-current / missing-version-configuration-
+    error, covering both the DDInter and PIP-criteria loader paths.
 - **Medication-Safety Engine, Phase 1: normalization + drug-drug interaction detection** (Roadmap
   Month 6-12, first slice): given free text describing a patient's medications, parses it into
   structured entries, normalizes each to RxCUI via RxNorm, persists them, then runs a deterministic
