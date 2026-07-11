@@ -46,6 +46,7 @@ class OpenFdaDdiClient:
         cache_ttl_seconds: int,
         max_rpm: float,
         transport: httpx.AsyncBaseTransport | None = None,
+        enabled: bool = True,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
@@ -53,6 +54,10 @@ class OpenFdaDdiClient:
         self._cache_ttl_seconds = cache_ttl_seconds
         self._bucket = TokenBucket(capacity=max_rpm, refill_rate_per_second=max_rpm / 60)
         self._transport = transport
+        # ollama_only deployments (ADR-0024) disable this client entirely —
+        # check_pair() short-circuits before the cache or the network, using
+        # the same "None is a normal, non-error result" contract below.
+        self._enabled = enabled
 
     async def check_pair(self, label_drug: str, mentioned_drug: str) -> OpenFdaDdiMatch | None:
         """Searches ``label_drug``'s own FDA label for a mention of
@@ -60,6 +65,8 @@ class OpenFdaDdiClient:
         direction only — label authors don't cross-reference symmetrically,
         so a caller wanting full pairwise coverage checks both directions
         (app/medication/interactions.py does)."""
+        if not self._enabled:
+            return None
 
         async def fetch() -> dict[str, object] | None:
             if not self._bucket.try_consume():

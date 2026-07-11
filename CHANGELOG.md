@@ -77,6 +77,24 @@ Roadmap phases that map to future releases are tracked in [docs/ROADMAP.md](docs
   - Tests: `Database` replica-plumbing tests, an integration test proving the RLS GUC is genuinely
     not shared between a primary and a replica session (fails closed without its own
     `set_rls_user` call, exactly like an unset primary session), `Settings` field tests.
+- **Enterprise path: Ollama-only deployment mode** (Roadmap, ADR-0024): a code-enforced guarantee,
+  not just an operator's promise, that AI chat and evidence retrieval never call a cloud provider or
+  a public medical-evidence API — unset by default, zero behavior change for every deployment that
+  doesn't opt in.
+  - New setting `DEPLOYMENT_MODE=ollama_only`. `build_provider_registry` skips Gemini/Anthropic/
+    OpenAI/OpenRouter entirely in this mode, even if their keys are set — only Ollama is ever
+    registered, a stronger guarantee than simply leaving keys blank.
+  - `app.state.evidence_connectors` is built as an empty registry instead of all six public
+    connectors — one choke point that disables both the Evidence Verification endpoint and the chat
+    orchestrator's public-evidence routing branch (ADR-0021), reusing each consumer's own existing
+    "nothing found" fallback path; no orchestrator or verification-service change needed.
+  - `RxNormClient`/`OpenFdaDdiClient` (Medication-Safety Engine RxNav normalization + openFDA DDI
+    fallback) gain a constructor-level `enabled` flag; disabled, they short-circuit to `None` before
+    touching the cache or network, reusing their own existing "`None` is a normal, non-error result"
+    contract — no `analysis_service.py`/`interactions.py`/`normalizer.py` change needed.
+  - No Postgres schema change; no Alembic migration.
+  - Tests: `build_provider_registry` ollama_only-mode unit tests, `RxNormClient`/`OpenFdaDdiClient`
+    disabled-client unit tests proving zero network calls, `Settings` field tests.
 
 ### Fixed
 - **WCAG AA color-contrast failures** (Roadmap — accessibility + performance audit): a systematic

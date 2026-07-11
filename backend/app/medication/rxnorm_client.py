@@ -44,6 +44,7 @@ class RxNormClient:
         cache_ttl_seconds: int,
         max_rps: float,
         transport: httpx.AsyncBaseTransport | None = None,
+        enabled: bool = True,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._redis = redis
@@ -52,6 +53,10 @@ class RxNormClient:
         # Injectable only so tests can substitute httpx.MockTransport,
         # matching every other external client in this codebase.
         self._transport = transport
+        # ollama_only deployments (ADR-0024) disable this client entirely —
+        # normalize() short-circuits before the cache or the network, using
+        # the same "None is a normal, non-error result" contract below.
+        self._enabled = enabled
 
     async def normalize(self, name: str) -> RxNormMatch | None:
         """Returns the best RxCUI match for ``name``, or ``None`` if RxNav
@@ -59,6 +64,8 @@ class RxNormClient:
         case (matches every evidence connector's own contract), since an
         unmatched drug name is still a usable, honestly-flagged medication
         entry, not a request failure."""
+        if not self._enabled:
+            return None
 
         async def fetch() -> dict[str, object] | None:
             if not self._bucket.try_consume():

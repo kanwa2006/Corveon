@@ -129,3 +129,24 @@ async def test_normalize_returns_none_when_rate_limit_bucket_is_exhausted(app) -
         transport=_transport(handler),
     )
     assert await client.normalize(query) is None
+
+
+@pytest.mark.asyncio
+async def test_normalize_returns_none_without_any_network_call_when_disabled(app) -> None:  # type: ignore[no-untyped-def]
+    """ollama_only deployments (ADR-0024) construct this client with
+    enabled=False — normalize() must never reach the network, cache, or
+    rate limiter, not even to check the cache first."""
+    query = f"disabled-client-drug-{uuid.uuid4()}"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("should not be called when the client is disabled")
+
+    client = RxNormClient(
+        base_url="https://rxnav.nlm.nih.gov/REST",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=20,
+        transport=_transport(handler),
+        enabled=False,
+    )
+    assert await client.normalize(query) is None

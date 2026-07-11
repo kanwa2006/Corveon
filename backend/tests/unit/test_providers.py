@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
+from app.core.config import Settings
 from app.providers.anthropic import AnthropicProvider
 from app.providers.base import ChatMessage, ChatProvider, ChatRole, ProviderUnavailableError
 from app.providers.budget import LLMCallBudget, LLMCallBudgetExceededError, TokenBucket
@@ -17,7 +18,11 @@ from app.providers.health import ProviderHealthTracker
 from app.providers.ollama import OllamaProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.openrouter import OpenRouterProvider
-from app.providers.registry import NoProviderAvailableError, ProviderRegistry
+from app.providers.registry import (
+    NoProviderAvailableError,
+    ProviderRegistry,
+    build_provider_registry,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -469,3 +474,37 @@ async def test_registry_propagates_budget_exceeded_before_trying_a_provider() ->
     with pytest.raises(LLMCallBudgetExceededError):
         async for _ in registry.stream_chat(messages=_A_MESSAGE, budget=exhausted_budget):
             pass
+
+
+# ── build_provider_registry / ollama_only (ADR-0024) ──────────────────────
+
+
+def _settings_with_every_cloud_key_set(**overrides: object) -> Settings:
+    return Settings(
+        JWT_SECRET_KEY="a-real-generated-secret-not-a-placeholder-value",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+        GEMINI_API_KEYS="gemini-key",
+        ANTHROPIC_API_KEYS="anthropic-key",
+        OPENAI_API_KEYS="openai-key",
+        OPENROUTER_API_KEYS="openrouter-key",
+        **overrides,  # type: ignore[arg-type]
+    )
+
+
+def test_build_provider_registry_registers_every_configured_cloud_provider() -> None:
+    registry = build_provider_registry(_settings_with_every_cloud_key_set())
+    assert set(registry.registered_provider_names) == {
+        "gemini",
+        "anthropic",
+        "openai",
+        "openrouter",
+        "ollama",
+    }
+
+
+def test_build_provider_registry_in_ollama_only_mode_ignores_configured_cloud_keys() -> None:
+    # ollama_only is a stronger guarantee than leaving keys blank: even with
+    # every cloud key set, none of them is registered (ADR-0024).
+    settings = _settings_with_every_cloud_key_set(DEPLOYMENT_MODE="ollama_only")
+    registry = build_provider_registry(settings)
+    assert registry.registered_provider_names == ["ollama"]

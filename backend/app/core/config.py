@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     API_HOST: str = "0.0.0.0"  # noqa: S104  # nosec B104 -- intentional container-friendly bind-all
     API_PORT: int = 8000
     FRONTEND_ORIGIN: str = "http://localhost:3000"
+    # "ollama_only" is a code-enforced guarantee (ADR-0024), not a promise:
+    # cloud AI providers are never registered even if their keys are set,
+    # and public evidence/RxNav/openFDA connectors are never built.
+    DEPLOYMENT_MODE: Literal["standard", "ollama_only"] = "standard"
 
     # ── Security / auth ──────────────────────────────────────
     JWT_SECRET_KEY: str = Field(min_length=32)
@@ -202,6 +206,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.CORVEON_ENV == "production"
+
+    @property
+    def is_ollama_only(self) -> bool:
+        return self.DEPLOYMENT_MODE == "ollama_only"
 
 
 @lru_cache(maxsize=1)

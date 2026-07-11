@@ -238,6 +238,16 @@ Vercel (frontend static/RSC) · Fly.io/Render (FastAPI API **and** ARQ worker �
 process that serves all SSE, ADR-0007) · Supabase/Neon (Postgres+pgvector) · Upstash (Redis) ·
 Cloudflare R2 (objects) · Gemini free / Ollama local (LLM). Details in [DEPLOYMENT.md](DEPLOYMENT.md).
 
+**Ollama-only deployment mode** (`DEPLOYMENT_MODE=ollama_only`, ADR-0024) — a code-enforced
+guarantee for regulated/data-residency-sensitive deployments (e.g. a hospital) that AI chat and
+evidence retrieval never call a cloud provider or a public medical-evidence API: only Ollama is
+registered (even if cloud provider keys are set), the evidence-connector registry is built empty
+(disabling both Evidence Verification and the chat orchestrator's public-evidence branch at that
+one choke point, ADR-0021), and the Medication-Safety Engine's RxNorm/openFDA live-lookup clients
+are constructed disabled. Zero behavior change when left at the default (`standard`). Pinned
+drug-data snapshot sync (ADR-0019) and local-disk storage (ADR-0014) already made no network calls
+and needed no change.
+
 ## 10. Repository structure
 ```
 backend/app/{api,orchestrator,agents,providers,evidence,medication,ingestion,data,core,workers}
