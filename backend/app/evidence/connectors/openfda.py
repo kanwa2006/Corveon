@@ -11,7 +11,7 @@ import httpx
 from redis.asyncio import Redis
 
 from app.data.models.evidence import EvidenceSourceName
-from app.evidence.cache import get_or_fetch
+from app.evidence.cache import UNAVAILABLE, Unavailable, get_or_fetch
 from app.evidence.connectors.base import EvidenceResult
 from app.providers.budget import TokenBucket
 
@@ -49,9 +49,9 @@ class OpenFdaConnector:
         self._transport = transport
 
     async def search(self, query: str, *, limit: int = 5) -> list[EvidenceResult]:
-        async def fetch() -> list[dict[str, object]]:
+        async def fetch() -> list[dict[str, object]] | Unavailable:
             if not self._bucket.try_consume():
-                return []
+                return UNAVAILABLE
             return await self._fetch_from_api(query, limit)
 
         cached = await get_or_fetch(
@@ -63,7 +63,9 @@ class OpenFdaConnector:
         )
         return [EvidenceResult.from_cache_dict(row) for row in cached]
 
-    async def _fetch_from_api(self, query: str, limit: int) -> list[dict[str, object]]:
+    async def _fetch_from_api(
+        self, query: str, limit: int
+    ) -> list[dict[str, object]] | Unavailable:
         escaped = query.replace('"', '\\"')
         params: dict[str, str | int] = {
             "search": f'openfda.generic_name:"{escaped}" openfda.brand_name:"{escaped}"',
@@ -74,10 +76,14 @@ class OpenFdaConnector:
 
         async with httpx.AsyncClient(timeout=10.0, transport=self._transport) as client:
             response = await client.get(f"{self._base_url}/drug/label.json", params=params)
-        if response.status_code >= 400:
+        if response.status_code == 404:
             # openFDA returns 404 for a zero-result search, not an error
             # payload — the same as "nothing found," never a real failure.
             return []
+        if response.status_code >= 400:
+            # Anything else (429, 5xx) is the source being unreachable, not
+            # the source answering — must not be cached as an empty result.
+            return UNAVAILABLE
 
         data = response.json()
         results: list[EvidenceResult] = []

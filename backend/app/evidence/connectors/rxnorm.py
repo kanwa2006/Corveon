@@ -10,7 +10,7 @@ import httpx
 from redis.asyncio import Redis
 
 from app.data.models.evidence import EvidenceSourceName
-from app.evidence.cache import get_or_fetch
+from app.evidence.cache import UNAVAILABLE, Unavailable, get_or_fetch
 from app.evidence.connectors.base import EvidenceResult
 from app.providers.budget import TokenBucket
 
@@ -36,9 +36,9 @@ class RxNormConnector:
         self._transport = transport
 
     async def search(self, query: str, *, limit: int = 5) -> list[EvidenceResult]:
-        async def fetch() -> list[dict[str, object]]:
+        async def fetch() -> list[dict[str, object]] | Unavailable:
             if not self._bucket.try_consume():
-                return []
+                return UNAVAILABLE
             return await self._fetch_from_api(query, limit)
 
         cached = await get_or_fetch(
@@ -50,11 +50,13 @@ class RxNormConnector:
         )
         return [EvidenceResult.from_cache_dict(row) for row in cached]
 
-    async def _fetch_from_api(self, query: str, limit: int) -> list[dict[str, object]]:
+    async def _fetch_from_api(
+        self, query: str, limit: int
+    ) -> list[dict[str, object]] | Unavailable:
         async with httpx.AsyncClient(timeout=10.0, transport=self._transport) as client:
             response = await client.get(f"{self._base_url}/drugs.json", params={"name": query})
         if response.status_code >= 400:
-            return []
+            return UNAVAILABLE
 
         data = response.json()
         concept_groups = data.get("drugGroup", {}).get("conceptGroup") or []

@@ -10,8 +10,21 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
+from typing import Final, final
 
 from redis.asyncio import Redis
+
+
+@final
+class Unavailable:
+    """Sentinel a ``fetch`` returns when it couldn't ask the source at all
+    (rate-limit bucket empty, HTTP error) — distinct from the source
+    answering "no match". Never cached: caching it would turn a transient
+    outage into a durable false no-match for the full TTL, silently
+    exempting that drug from safety checks until the entry expires."""
+
+
+UNAVAILABLE: Final[Unavailable] = Unavailable()
 
 
 def _cache_key(source: str, query: str) -> str:
@@ -25,11 +38,13 @@ async def get_or_fetch(
     source: str,
     query: str,
     ttl_seconds: int,
-    fetch: Callable[[], Awaitable[dict[str, object] | None]],
+    fetch: Callable[[], Awaitable[dict[str, object] | None | Unavailable]],
 ) -> dict[str, object] | None:
     """Returns a cached result for ``query`` under ``source``, or calls
     ``fetch`` and caches the result (including a "no match" ``None``, so a
-    genuinely unmatched drug name doesn't re-hit the API every time)."""
+    genuinely unmatched drug name doesn't re-hit the API every time). A
+    fetch that returns ``UNAVAILABLE`` yields ``None`` for this call only —
+    nothing is cached, so the next call retries the source."""
     key = _cache_key(source, query)
     cached = await redis.get(key)
     if cached is not None:
@@ -37,5 +52,7 @@ async def get_or_fetch(
         return cached_value
 
     fetched = await fetch()
+    if isinstance(fetched, Unavailable):
+        return None
     await redis.set(key, json.dumps(fetched), ex=ttl_seconds)
     return fetched

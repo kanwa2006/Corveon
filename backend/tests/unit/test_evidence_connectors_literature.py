@@ -24,6 +24,54 @@ def _transport(handler):  # type: ignore[no-untyped-def]
 
 
 @pytest.mark.asyncio
+async def test_pubmed_search_retries_after_a_transient_server_error(app) -> None:  # type: ignore[no-untyped-def]
+    """Regression: a 5xx from e-utilities used to be cached as an empty
+    result for the full TTL — a transient outage silently became "no
+    evidence" for 24 hours."""
+    query = f"metformin transient-{uuid.uuid4()}"
+    call_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(500)
+        if request.url.path.endswith("/esearch.fcgi"):
+            return httpx.Response(
+                200, content=json.dumps({"esearchresult": {"idlist": ["12345678"]}})
+            )
+        return httpx.Response(
+            200,
+            content=json.dumps(
+                {
+                    "result": {
+                        "uids": ["12345678"],
+                        "12345678": {
+                            "title": "Metformin in type 2 diabetes: a review",
+                            "pubdate": "2023 Jun 15",
+                            "source": "Diabetes Care",
+                        },
+                    }
+                }
+            ),
+        )
+
+    connector = PubMedConnector(
+        base_url="https://eutils.ncbi.nlm.nih.gov/entrez/eutils",
+        api_key=None,
+        email="test@example.com",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=10,
+        transport=_transport(handler),
+    )
+    assert await connector.search(query) == []
+    results = await connector.search(query)
+    assert len(results) == 1
+    assert results[0].identifier == "12345678"
+
+
+@pytest.mark.asyncio
 async def test_pubmed_search_returns_citations_via_esearch_then_esummary(app) -> None:  # type: ignore[no-untyped-def]
     query = f"metformin diabetes-{uuid.uuid4()}"
     calls: list[str] = []

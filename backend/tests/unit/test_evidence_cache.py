@@ -11,7 +11,7 @@ from datetime import date
 
 import pytest
 from app.data.models.evidence import EvidenceSourceName
-from app.evidence.cache import get_or_fetch
+from app.evidence.cache import UNAVAILABLE, Unavailable, get_or_fetch
 from app.evidence.connectors.base import EvidenceResult
 
 pytestmark = pytest.mark.unit
@@ -69,6 +69,34 @@ async def test_get_or_fetch_calls_fetch_on_first_call_only(app) -> None:  # type
     assert first == [{"title": "Result A"}]
     assert second == [{"title": "Result A"}]
     assert call_count == 1, "fetch should only run once — the second call must hit the cache"
+
+
+@pytest.mark.asyncio
+async def test_get_or_fetch_does_not_cache_an_unavailable_result(app) -> None:  # type: ignore[no-untyped-def]
+    """Regression: a fetch that couldn't ask the source (rate-limited, HTTP
+    error) used to have its empty result cached for the full TTL — a
+    transient outage masqueraded as "no evidence" for 24 hours."""
+    query = f"unavailable then ok {uuid.uuid4()}"
+    call_count = 0
+
+    async def fetch() -> list[dict[str, object]] | Unavailable:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return UNAVAILABLE
+        return [{"title": "Result B"}]
+
+    redis = app.state.redis
+    first = await get_or_fetch(
+        redis, source="test-source", query=query, ttl_seconds=60, fetch=fetch
+    )
+    second = await get_or_fetch(
+        redis, source="test-source", query=query, ttl_seconds=60, fetch=fetch
+    )
+
+    assert first == []
+    assert second == [{"title": "Result B"}]
+    assert call_count == 2, "an UNAVAILABLE result must not be cached — the second call retries"
 
 
 @pytest.mark.asyncio

@@ -112,6 +112,109 @@ async def test_check_pair_returns_none_when_rate_limit_bucket_is_exhausted(app) 
 
 
 @pytest.mark.asyncio
+async def test_a_zero_result_404_is_cached_as_a_no_match(app) -> None:  # type: ignore[no-untyped-def]
+    """openFDA's 404 means "nothing found" (a real answer, cached) — unlike
+    a 5xx, which is the source being unreachable (never cached)."""
+    label_drug = f"unknown-drug-{uuid.uuid4()}"
+    call_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(404)
+
+    client = OpenFdaDdiClient(
+        base_url="https://api.fda.gov",
+        api_key=None,
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rpm=240,
+        transport=_transport(handler),
+    )
+    assert await client.check_pair(label_drug, "aspirin") is None
+    assert await client.check_pair(label_drug, "aspirin") is None
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_server_error_is_not_cached_as_a_no_match(app) -> None:  # type: ignore[no-untyped-def]
+    """Regression: a 5xx/429 used to be cached as a no-match for the full
+    TTL, silently hiding a label-mentioned interaction until expiry."""
+    label_drug = f"warfarin-{uuid.uuid4()}"
+    body = {
+        "results": [
+            {
+                "id": "label-123",
+                "drug_interactions": [
+                    "Concomitant use with aspirin increases the risk of bleeding."
+                ],
+            }
+        ]
+    }
+    call_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(500)
+        return httpx.Response(200, content=json.dumps(body))
+
+    client = OpenFdaDdiClient(
+        base_url="https://api.fda.gov",
+        api_key=None,
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rpm=240,
+        transport=_transport(handler),
+    )
+    assert await client.check_pair(label_drug, "aspirin") is None
+    match = await client.check_pair(label_drug, "aspirin")
+    assert match is not None
+    assert match.label_id == "label-123"
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_check_is_not_cached_as_a_no_match(app) -> None:  # type: ignore[no-untyped-def]
+    label_drug = f"warfarin-{uuid.uuid4()}"
+    body = {
+        "results": [
+            {
+                "id": "label-456",
+                "drug_interactions": [
+                    "Concomitant use with aspirin increases the risk of bleeding."
+                ],
+            }
+        ]
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=json.dumps(body))
+
+    exhausted = OpenFdaDdiClient(
+        base_url="https://api.fda.gov",
+        api_key=None,
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rpm=0,
+        transport=_transport(handler),
+    )
+    assert await exhausted.check_pair(label_drug, "aspirin") is None
+
+    refilled = OpenFdaDdiClient(
+        base_url="https://api.fda.gov",
+        api_key=None,
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rpm=240,
+        transport=_transport(handler),
+    )
+    match = await refilled.check_pair(label_drug, "aspirin")
+    assert match is not None
+    assert match.label_id == "label-456"
+
+
+@pytest.mark.asyncio
 async def test_check_pair_returns_none_without_any_network_call_when_disabled(app) -> None:  # type: ignore[no-untyped-def]
     """ollama_only deployments (ADR-0024) construct this client with
     enabled=False — check_pair() must never reach the network, cache, or

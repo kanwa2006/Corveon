@@ -17,7 +17,7 @@ from typing import Protocol
 import httpx
 from redis.asyncio import Redis
 
-from app.medication.cache import get_or_fetch
+from app.medication.cache import UNAVAILABLE, Unavailable, get_or_fetch
 from app.providers.budget import TokenBucket
 
 
@@ -67,9 +67,9 @@ class RxNormClient:
         if not self._enabled:
             return None
 
-        async def fetch() -> dict[str, object] | None:
+        async def fetch() -> dict[str, object] | None | Unavailable:
             if not self._bucket.try_consume():
-                return None
+                return UNAVAILABLE
             return await self._fetch_from_api(name)
 
         cached = await get_or_fetch(
@@ -83,9 +83,11 @@ class RxNormClient:
             return None
         return RxNormMatch(rxcui=str(cached["rxcui"]), canonical_name=str(cached["canonical_name"]))
 
-    async def _fetch_from_api(self, name: str) -> dict[str, object] | None:
+    async def _fetch_from_api(self, name: str) -> dict[str, object] | None | Unavailable:
         async with httpx.AsyncClient(timeout=10.0, transport=self._transport) as client:
             exact = await self._fetch_exact(client, name)
+            if isinstance(exact, Unavailable):
+                return UNAVAILABLE
             if exact is not None:
                 return exact
             # getDrugs only resolves correctly-spelled names; blueprint §9
@@ -94,10 +96,12 @@ class RxNormClient:
             # DDI/renal/PIP findings downstream.
             return await self._fetch_approximate(client, name)
 
-    async def _fetch_exact(self, client: httpx.AsyncClient, name: str) -> dict[str, object] | None:
+    async def _fetch_exact(
+        self, client: httpx.AsyncClient, name: str
+    ) -> dict[str, object] | None | Unavailable:
         response = await client.get(f"{self._base_url}/drugs.json", params={"name": name})
         if response.status_code >= 400:
-            return None
+            return UNAVAILABLE
 
         data = response.json()
         concept_groups = data.get("drugGroup", {}).get("conceptGroup") or []
@@ -111,12 +115,12 @@ class RxNormClient:
 
     async def _fetch_approximate(
         self, client: httpx.AsyncClient, name: str
-    ) -> dict[str, object] | None:
+    ) -> dict[str, object] | None | Unavailable:
         response = await client.get(
             f"{self._base_url}/approximateTerm.json", params={"term": name, "maxEntries": 1}
         )
         if response.status_code >= 400:
-            return None
+            return UNAVAILABLE
 
         data = response.json()
         candidates = data.get("approximateGroup", {}).get("candidate") or []
@@ -125,11 +129,15 @@ class RxNormClient:
             if not rxcui:
                 continue
             canonical_name = candidate.get("name") or await self._fetch_rxcui_name(client, rxcui)
+            if isinstance(canonical_name, Unavailable):
+                return UNAVAILABLE
             if canonical_name:
                 return {"rxcui": rxcui, "canonical_name": canonical_name}
         return None
 
-    async def _fetch_rxcui_name(self, client: httpx.AsyncClient, rxcui: str) -> str | None:
+    async def _fetch_rxcui_name(
+        self, client: httpx.AsyncClient, rxcui: str
+    ) -> str | None | Unavailable:
         """Older RxNav approximateTerm candidates omit ``name`` — resolve it
         from the concept's own properties; without a canonical name the match
         is useless to DDInter (keyed on canonical names), so an unresolvable
@@ -138,7 +146,7 @@ class RxNormClient:
             f"{self._base_url}/rxcui/{rxcui}/property.json", params={"propName": "RxNorm Name"}
         )
         if response.status_code >= 400:
-            return None
+            return UNAVAILABLE
 
         data = response.json()
         for prop in data.get("propConceptGroup", {}).get("propConcept") or []:
