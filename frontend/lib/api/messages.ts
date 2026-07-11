@@ -17,10 +17,32 @@ export interface RetrievedChunk {
   similarity: number;
 }
 
+export type PublicEvidenceSource =
+  | 'pubmed'
+  | 'dailymed'
+  | 'openfda'
+  | 'clinicaltrials'
+  | 'mesh'
+  | 'rxnorm';
+
+/** One public-evidence search result used to ground a response when the
+ * chat has no uploaded documents (ADR-0021) — kept distinct from
+ * `RetrievedChunk`, never merged: a different trust level (public source
+ * vs. the user's own upload). */
+export interface PublicEvidenceItem {
+  source: PublicEvidenceSource;
+  title: string;
+  url: string | null;
+  identifier: string | null;
+  snippet: string | null;
+  published_date: string | null;
+}
+
 export interface RoutingTrace {
-  path: 'fast_path' | 'pure_llm' | 'rag_grounded' | 'rag_no_match';
+  path: 'fast_path' | 'pure_llm' | 'rag_grounded' | 'rag_no_match' | 'rag_public_evidence';
   provider: string | null;
   retrieved_chunks: RetrievedChunk[];
+  public_evidence: PublicEvidenceItem[];
   duration_ms: number;
   status: 'ok' | 'provider_unavailable' | 'budget_exceeded';
 }

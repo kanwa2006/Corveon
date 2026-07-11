@@ -14,8 +14,11 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 
 import fitz
 import pytest
-from app.api.deps import get_provider_registry
+from app.api.deps import get_evidence_connector_registry, get_provider_registry
 from app.core.config import get_settings
+from app.data.models.evidence import EvidenceSourceName
+from app.evidence.connectors.base import EvidenceResult
+from app.evidence.registry import EvidenceConnectorRegistry
 from app.ingestion.embeddings import get_embedding_model
 from app.providers.base import ChatMessage, ChatProvider
 from app.providers.registry import ProviderRegistry
@@ -38,6 +41,35 @@ class _StubProvider(ChatProvider):
     ) -> AsyncIterator[str]:
         for delta in self._deltas:
             yield delta
+
+
+class _FakeEvidenceConnector:
+    def __init__(self, name: EvidenceSourceName, results: list[EvidenceResult]) -> None:
+        self.name = name
+        self._results = results
+
+    async def search(self, query: str, *, limit: int = 5) -> list[EvidenceResult]:
+        return self._results[:limit]
+
+
+def _empty_evidence_registry() -> EvidenceConnectorRegistry:
+    return EvidenceConnectorRegistry(
+        {EvidenceSourceName.PUBMED: _FakeEvidenceConnector(EvidenceSourceName.PUBMED, [])}
+    )
+
+
+def _pubmed_evidence_registry() -> EvidenceConnectorRegistry:
+    result = EvidenceResult(
+        source=EvidenceSourceName.PUBMED,
+        title="Headache management: a review",
+        url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        identifier="12345678",
+        snippet="NSAIDs are first-line therapy for tension-type headache.",
+        published_date=None,
+    )
+    return EvidenceConnectorRegistry(
+        {EvidenceSourceName.PUBMED: _FakeEvidenceConnector(EvidenceSourceName.PUBMED, [result])}
+    )
 
 
 def _parse_sse(raw_text: str) -> list[tuple[str, str]]:
@@ -201,6 +233,70 @@ async def test_send_message_grounds_answer_in_uploaded_document(
     assert done_event["routing_trace"]["path"] == "rag_grounded"
     assert len(done_event["routing_trace"]["retrieved_chunks"]) >= 1
     assert done_event["routing_trace"]["retrieved_chunks"][0]["document_filename"] == "doc.pdf"
+
+
+@pytest.mark.asyncio
+async def test_send_message_grounds_answer_in_public_evidence_when_no_documents(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    """ADR-0021: a substantive query in a chat with no uploaded documents
+    searches public evidence sources instead of falling straight through
+    to an ungrounded pure-LLM answer."""
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+
+    app.dependency_overrides[get_provider_registry] = lambda: ProviderRegistry(
+        {"stub": _StubProvider(["Grounded in public evidence."])}, ["stub"]
+    )
+    app.dependency_overrides[get_evidence_connector_registry] = _pubmed_evidence_registry
+    try:
+        async with client.stream(
+            "POST",
+            f"/api/v1/chats/{chat_id}/messages",
+            json={"content": "What treats a headache?"},
+            headers=headers,
+        ) as response:
+            assert response.status_code == 202
+            raw = await response.aread()
+    finally:
+        app.dependency_overrides.pop(get_provider_registry, None)
+        app.dependency_overrides.pop(get_evidence_connector_registry, None)
+
+    done_event = next(json.loads(data) for kind, data in _parse_sse(raw.decode()) if kind == "done")
+    assert done_event["routing_trace"]["path"] == "rag_public_evidence"
+    assert done_event["routing_trace"]["retrieved_chunks"] == []
+    public_evidence = done_event["routing_trace"]["public_evidence"]
+    assert len(public_evidence) == 1
+    assert public_evidence[0]["source"] == "pubmed"
+    assert public_evidence[0]["title"] == "Headache management: a review"
+
+
+@pytest.mark.asyncio
+async def test_send_message_uses_pure_llm_when_no_documents_and_no_public_evidence_found(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+
+    app.dependency_overrides[get_provider_registry] = lambda: ProviderRegistry(
+        {"stub": _StubProvider(["An ungrounded answer."])}, ["stub"]
+    )
+    app.dependency_overrides[get_evidence_connector_registry] = _empty_evidence_registry
+    try:
+        async with client.stream(
+            "POST",
+            f"/api/v1/chats/{chat_id}/messages",
+            json={"content": "What treats a headache?"},
+            headers=headers,
+        ) as response:
+            raw = await response.aread()
+    finally:
+        app.dependency_overrides.pop(get_provider_registry, None)
+        app.dependency_overrides.pop(get_evidence_connector_registry, None)
+
+    done_event = next(json.loads(data) for kind, data in _parse_sse(raw.decode()) if kind == "done")
+    assert done_event["routing_trace"]["path"] == "pure_llm"
+    assert done_event["routing_trace"]["public_evidence"] == []
 
 
 @pytest.mark.asyncio

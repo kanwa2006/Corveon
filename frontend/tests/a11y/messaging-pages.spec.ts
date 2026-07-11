@@ -39,9 +39,23 @@ test.describe('accessibility — chat detail page (messages + documents)', () =>
     // configured) so the a11y check also covers the message-thread state.
     await page.getByPlaceholder(/Ask about this chat's/).fill('What treats a headache?');
     await page.getByRole('button', { name: 'Send message' }).click();
-    await expect(page.getByText('No AI provider is currently reachable.')).toBeVisible({
-      timeout: 15_000,
-    });
+    const providerNotice = page.getByText('No AI provider is currently reachable.');
+    await expect(providerNotice).toBeVisible({ timeout: 15_000 });
+
+    // The message bubble fades in (Framer Motion animates the wrapping
+    // motion.div's inline `opacity` 0 -> 1); wait for that transition to
+    // settle before scanning, otherwise axe can sample a mid-transition
+    // frame and report a false-positive color-contrast violation.
+    await expect(async () => {
+      const opacity = await providerNotice.evaluate((el) => {
+        let ancestor: HTMLElement | null = el as HTMLElement;
+        while (ancestor && ancestor.style.opacity === '') {
+          ancestor = ancestor.parentElement;
+        }
+        return ancestor?.style.opacity ?? '1';
+      });
+      expect(opacity).toBe('1');
+    }).toPass({ timeout: 2_000 });
 
     const threadResults = await new AxeBuilder({ page }).analyze();
     expect(threadResults.violations).toEqual([]);

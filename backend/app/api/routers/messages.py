@@ -15,6 +15,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.api.deps import (
     CurrentUserDep,
     EmbeddingModelDep,
+    EvidenceConnectorRegistryDep,
     ProviderRegistryDep,
     RlsDbDep,
     SettingsDep,
@@ -63,6 +64,7 @@ async def send_message(
     current_user: StreamingUserDep,
     embedding_model: EmbeddingModelDep,
     provider_registry: ProviderRegistryDep,
+    evidence_registry: EvidenceConnectorRegistryDep,
     settings: SettingsDep,
 ) -> EventSourceResponse:
     # The browser connects to this endpoint directly (ADR-0007), so it
@@ -88,6 +90,7 @@ async def send_message(
                 chunk_repo=chunk_repo,
                 message_repo=message_repo,
                 embedding_model=embedding_model,
+                evidence_registry=evidence_registry,
                 chat_id=chat_id,
                 history=history,
                 user_query=payload.content,

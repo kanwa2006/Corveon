@@ -5,13 +5,18 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from app.agents.public_evidence import PublicEvidenceAgent
 from app.agents.query_understanding import classify_intent
 from app.agents.state import OrchestratorState, RoutingPath
 from app.agents.task_planning import TaskPlanningAgent
+from app.data.models.evidence import EvidenceSourceName
 from app.data.repositories.chunk_repository import ChunkRepository
+from app.evidence.connectors.base import EvidenceResult
+from app.evidence.registry import EvidenceConnectorRegistry
 from app.ingestion.embeddings import EmbeddingModel
 
 pytestmark = pytest.mark.unit
@@ -113,3 +118,94 @@ async def test_plan_task_uses_rag_grounded_when_a_relevant_chunk_is_found() -> N
     assert result.routing_path == RoutingPath.RAG_GROUNDED
     assert len(result.citations) == 1
     assert result.citations[0].document_filename == "doc.pdf"
+
+
+# ── Public Evidence Retrieval (ADR-0021) ────────────────────────────────
+
+
+class _FakeConnector:
+    def __init__(self, name: EvidenceSourceName, results: list[EvidenceResult]) -> None:
+        self.name = name
+        self._results = results
+
+    async def search(self, query: str, *, limit: int = 5) -> list[EvidenceResult]:
+        return self._results[:limit]
+
+
+def _evidence_result(title: str) -> EvidenceResult:
+    return EvidenceResult(
+        source=EvidenceSourceName.PUBMED,
+        title=title,
+        url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        identifier="12345678",
+        snippet="A snippet.",
+        published_date=date(2024, 1, 1),
+    )
+
+
+@pytest.mark.asyncio
+async def test_public_evidence_agent_populates_state_from_the_registry() -> None:
+    registry = EvidenceConnectorRegistry(
+        {
+            EvidenceSourceName.PUBMED: _FakeConnector(
+                EvidenceSourceName.PUBMED, [_evidence_result("P1")]
+            )
+        }
+    )
+    chunk_repo = AsyncMock(spec=ChunkRepository)
+
+    result = await PublicEvidenceAgent(registry).run(_state(chunk_repo, "What treats a headache?"))
+
+    assert len(result.public_evidence) == 1
+    assert result.public_evidence[0].title == "P1"
+
+
+@pytest.mark.asyncio
+async def test_plan_task_uses_rag_public_evidence_when_no_documents_but_evidence_is_found() -> None:
+    chunk_repo = AsyncMock(spec=ChunkRepository)
+    chunk_repo.has_ready_chunks.return_value = False
+    registry = EvidenceConnectorRegistry(
+        {
+            EvidenceSourceName.PUBMED: _FakeConnector(
+                EvidenceSourceName.PUBMED, [_evidence_result("P1")]
+            )
+        }
+    )
+
+    result = await TaskPlanningAgent(public_evidence=PublicEvidenceAgent(registry)).run(
+        _state(chunk_repo, "What treats a headache?")
+    )
+
+    assert result.routing_path == RoutingPath.RAG_PUBLIC_EVIDENCE
+    assert len(result.public_evidence) == 1
+    assert result.citations == []
+    chunk_repo.similarity_search.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_plan_task_falls_back_to_pure_llm_when_public_evidence_finds_nothing() -> None:
+    chunk_repo = AsyncMock(spec=ChunkRepository)
+    chunk_repo.has_ready_chunks.return_value = False
+    registry = EvidenceConnectorRegistry(
+        {EvidenceSourceName.PUBMED: _FakeConnector(EvidenceSourceName.PUBMED, [])}
+    )
+
+    result = await TaskPlanningAgent(public_evidence=PublicEvidenceAgent(registry)).run(
+        _state(chunk_repo, "What treats a headache?")
+    )
+
+    assert result.routing_path == RoutingPath.PURE_LLM
+    assert result.public_evidence == []
+
+
+@pytest.mark.asyncio
+async def test_plan_task_uses_pure_llm_without_a_public_evidence_agent_configured() -> None:
+    # No public_evidence agent passed — must behave exactly like before this
+    # feature existed (PURE_LLM, no lookup attempted), not raise.
+    chunk_repo = AsyncMock(spec=ChunkRepository)
+    chunk_repo.has_ready_chunks.return_value = False
+
+    result = await TaskPlanningAgent().run(_state(chunk_repo, "What treats a headache?"))
+
+    assert result.routing_path == RoutingPath.PURE_LLM
+    assert result.public_evidence == []

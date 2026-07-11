@@ -21,18 +21,22 @@ from enum import StrEnum
 from typing import Any
 
 from app.data.repositories.chunk_repository import ChunkRepository
+from app.evidence.connectors.base import EvidenceResult
 from app.ingestion.embeddings import EmbeddingModel
 
 
 class RoutingPath(StrEnum):
     """The routing-policy outcome (CLAUDE.md §6), reduced to today's real
-    capabilities. Month 3/6-12 add more branches (public evidence, org-
-    trusted sources, multi-agent verification) as those subsystems land."""
+    capabilities. Org-trusted sources and full multi-agent verification are
+    still outstanding branches (ADR-0021)."""
 
     FAST_PATH = "fast_path"  # trivial input — retrieval skipped by policy (§23.5)
-    PURE_LLM = "pure_llm"  # substantive query, but this chat has no documents to ground on
+    # substantive query, no chat documents, no public evidence found either
+    PURE_LLM = "pure_llm"
     RAG_GROUNDED = "rag_grounded"  # substantive query, relevant chunks found and used
     RAG_NO_MATCH = "rag_no_match"  # chat has documents, but none were relevant enough
+    # no chat documents; grounded on public evidence sources instead (ADR-0021)
+    RAG_PUBLIC_EVIDENCE = "rag_public_evidence"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,3 +72,8 @@ class OrchestratorState:
     is_trivial: bool | None = None
     routing_path: RoutingPath | None = None
     citations: list[Citation] = field(default_factory=list)
+    # Kept separate from `citations` — never blurred with uploaded-document
+    # chunks. Different trust level (blueprint's `source_class` taxonomy:
+    # `verified_public` vs `uploaded_document`), reused directly from the
+    # connector layer's own type rather than a parallel one (ADR-0021).
+    public_evidence: list[EvidenceResult] = field(default_factory=list)
