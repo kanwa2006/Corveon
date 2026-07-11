@@ -179,8 +179,9 @@ export default function ChatDetailPage(): React.JSX.Element {
         status={medicationAnalysis.status}
         medications={medicationAnalysis.medications}
         findings={medicationAnalysis.findings}
+        renalFindings={medicationAnalysis.renalFindings}
         errorMessage={medicationAnalysis.errorMessage}
-        onAnalyze={(rawText) => void medicationAnalysis.analyze(rawText)}
+        onAnalyze={(rawText, renalParams) => void medicationAnalysis.analyze(rawText, renalParams)}
         onReset={medicationAnalysis.reset}
       />
 

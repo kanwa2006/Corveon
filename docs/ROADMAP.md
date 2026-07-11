@@ -155,8 +155,8 @@ contract. No application code. Self-review complete.
   (label-text fallback, tagged `unclassified` severity — the FDA's own words, not a synthesized
   severity tier).
 - ✅ API — `POST /chats/{id}/medications/analyze` (SSE, `medication`/`interaction`/`done`/`error`
-  events, same stream-ticket bridge as `/verify`) returning `{normalized[], interactions[]}` only;
-  `renal[]`/`pip_flags[]`/`discrepancies[]` are later phases below, not stubbed.
+  events, same stream-ticket bridge as `/verify`) returning `{normalized[], interactions[]}`;
+  `pip_flags[]`/`discrepancies[]` are later phases below, not stubbed.
 - ✅ Frontend — a medication-list input + streamed results panel
   (`components/chats/medication-panel.tsx`) on the chat detail page, mirroring the Evidence
   Verification UI's established pattern.
@@ -166,8 +166,29 @@ contract. No application code. Self-review complete.
   unit/hook/component tests plus a live browser verification (real Gemini parse + real RxNav
   lookups) against the real running backend.
 
+### Phase 2 — Renal/dose checks ✅
+- ✅ **Dual renal equations** (ADR-0005) — `app/medication/renal.py`: Cockcroft-Gault CrCl (the
+  historical FDA/label standard) and the 2021 race-free CKD-EPI eGFR (de-indexed to the patient's
+  actual body surface area via the DuBois formula for dosing use), both deterministic, no LLM.
+  Reference values cross-checked against the NKF/ASN CKD-EPI 2021 calculator and standard
+  Cockcroft-Gault worked examples before being pinned as golden tests.
+- ✅ Threshold-sensitive drug table (a deliberately small, documented first pass: DOACs — apixaban/
+  dabigatran/rivaroxaban/edoxaban at 30 mL/min; aminoglycosides/vancomycin at 60 mL/min) — a finding
+  is **MAJOR** when both equations agree renal function is impaired, **MODERATE** when the two
+  equations land on opposite sides of the threshold — the genuine "standard in flux" **divergence**
+  ADR-0005 exists to surface, never silently resolved toward one equation.
+- ✅ Renal parameters (age/weight/sex/serum creatinine/height) are optional and all-or-nothing on
+  the existing `/medications/analyze` request — omitting all five skips renal checks entirely (an
+  honest "insufficient data" state); a partial set is a `422`, not a silent skip. No new endpoint;
+  `renal` is an additive SSE event on the same stream.
+- ✅ Frontend — an optional, collapsible renal-parameter input section and renal-finding cards
+  (CrCl/eGFR/threshold values, severity badge) in the existing medication panel.
+- ✅ Tests written alongside the feature — golden tests for both equations plus threshold/divergence
+  rules, API tests (renal finding present/absent/rejected-partial), frontend unit/component tests,
+  and Playwright e2e coverage (reusable fixtures for the interacting-pair and impaired-renal-params
+  test inputs, `tests/e2e/fixtures/medications.ts`).
+
 ### Later phases — not yet implemented
-- **Dual renal equations** — Cockcroft-Gault + 2021 race-free CKD-EPI, divergence flags (ADR-0005).
 - **Beers 2023** + **STOPP/START v3** screens; medication-discrepancy classification.
 - Guardrailed LLM explanations (no ungrounded facts).
 - Multi-agent depth; enterprise path (Qdrant option, SSO, read replicas, on-prem/Ollama).

@@ -6,6 +6,8 @@ import {
   streamMedicationAnalysis,
   type InteractionFinding,
   type NormalizedMedication,
+  type RenalFinding,
+  type RenalParameters,
 } from '@/lib/api/medication';
 import { fetchStreamTicket } from '@/lib/api/stream-ticket';
 
@@ -15,14 +17,16 @@ export function useMedicationAnalysis(chatId: string) {
   const [status, setStatus] = useState<MedicationAnalysisStatus>('idle');
   const [medications, setMedications] = useState<NormalizedMedication[]>([]);
   const [findings, setFindings] = useState<InteractionFinding[]>([]);
+  const [renalFindings, setRenalFindings] = useState<RenalFinding[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const analyze = useCallback(
-    async (rawText: string) => {
+    async (rawText: string, renalParams: RenalParameters | null = null) => {
       setStatus('starting');
       setMedications([]);
       setFindings([]);
+      setRenalFindings([]);
       setErrorMessage(null);
 
       let ticket: string;
@@ -41,10 +45,12 @@ export function useMedicationAnalysis(chatId: string) {
       await streamMedicationAnalysis(
         chatId,
         rawText,
+        renalParams,
         ticket,
         {
           onMedication: (medication) => setMedications((prev) => [...prev, medication]),
           onInteraction: (finding) => setFindings((prev) => [...prev, finding]),
+          onRenal: (finding) => setRenalFindings((prev) => [...prev, finding]),
           onDone: () => setStatus('done'),
           onError: (_code, message) => {
             setStatus('error');
@@ -62,8 +68,9 @@ export function useMedicationAnalysis(chatId: string) {
     setStatus('idle');
     setMedications([]);
     setFindings([]);
+    setRenalFindings([]);
     setErrorMessage(null);
   }, []);
 
-  return { analyze, reset, status, medications, findings, errorMessage };
+  return { analyze, reset, status, medications, findings, renalFindings, errorMessage };
 }

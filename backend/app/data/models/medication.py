@@ -1,7 +1,7 @@
-"""Medication-Safety Engine data model (blueprint §9, §10.1) — Phase 1:
-normalization + drug-drug interaction detection. Every table carries
-``chat_id``, the isolation anchor (§5), matching every other content-bearing
-table in this codebase.
+"""Medication-Safety Engine data model (blueprint §9, §10.1) — normalization
++ drug-drug interaction detection (Phase 1), renal/dose checks (Phase 2,
+ADR-0005). Every table carries ``chat_id``, the isolation anchor (§5),
+matching every other content-bearing table in this codebase.
 
 ``medication_findings`` augments the blueprint's minimal ``(chat_id, type,
 severity, source, rule_id, explanation, provenance)`` shape with two
@@ -50,8 +50,16 @@ class FindingSeverity(StrEnum):
 
 
 class InteractionSource(StrEnum):
+    """Where a finding's verdict came from. Despite the name (kept from
+    Phase 1, where every finding was a drug-drug interaction), this enum is
+    reused for every finding type sharing ``medication_findings.source`` —
+    CALCULATED covers deterministic, formula-derived findings (Phase 2's
+    renal checks; a later phase's Beers/STOPP-START rule matches), as
+    opposed to DDINTER/OPENFDA_LABEL's external-source lookups."""
+
     DDINTER = "ddinter"
     OPENFDA_LABEL = "openfda_label"
+    CALCULATED = "calculated"
 
 
 def _enum_column(enum_cls: type[StrEnum], name: str) -> SAEnum:

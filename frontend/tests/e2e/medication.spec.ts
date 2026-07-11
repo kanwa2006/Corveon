@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { INTERACTING_MEDICATION_LIST } from './fixtures/medications';
+import {
+  IMPAIRED_RENAL_PARAMETERS,
+  INTERACTING_MEDICATION_LIST,
+  RENAL_THRESHOLD_MEDICATION_LIST,
+} from './fixtures/medications';
 
 /** Requires a live backend (FastAPI + Postgres + Redis) — see playwright.config.ts.
  * No AI provider is configured in the test environment, so this exercises
@@ -57,5 +61,60 @@ test.describe('medication safety', () => {
     await expect(page.getByRole('button', { name: 'Check for interactions' })).toBeDisabled();
     await page.getByPlaceholder(/List medications, one per line/).fill('metformin');
     await expect(page.getByRole('button', { name: 'Check for interactions' })).toBeEnabled();
+  });
+
+  test('renal fields are hidden until the checkbox is checked, and the trigger stays disabled until all of them are filled', async ({
+    page,
+  }) => {
+    await registerAndLogin(page, uniqueEmail());
+    await page.goto('/chats');
+    await page.getByRole('button', { name: 'New chat' }).click();
+    await expect(page).toHaveURL(/\/chats\/[0-9a-f-]+/);
+
+    await page
+      .getByPlaceholder(/List medications, one per line/)
+      .fill(RENAL_THRESHOLD_MEDICATION_LIST);
+    await expect(page.getByLabel(/^Age \(years\)/)).not.toBeVisible();
+
+    await page.getByRole('checkbox', { name: /include renal function/i }).check();
+    await expect(page.getByLabel(/^Age \(years\)/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check for interactions' })).toBeDisabled();
+
+    await page.getByLabel(/^Age \(years\)/).fill(IMPAIRED_RENAL_PARAMETERS.ageYears);
+    await page.getByLabel(/^Weight \(kg\)/).fill(IMPAIRED_RENAL_PARAMETERS.weightKg);
+    await page.getByLabel(/^Sex/).selectOption(IMPAIRED_RENAL_PARAMETERS.sex);
+    await page.getByLabel(/Serum creatinine/).fill(IMPAIRED_RENAL_PARAMETERS.serumCreatinineMgDl);
+    await page.getByLabel(/^Height \(cm\)/).fill(IMPAIRED_RENAL_PARAMETERS.heightCm);
+
+    await expect(page.getByRole('button', { name: 'Check for interactions' })).toBeEnabled();
+  });
+
+  test('checking for interactions with renal parameters in degraded mode shows an honest status', async ({
+    page,
+  }) => {
+    // Exercises the full submission path (renal params included in the
+    // request body) even without a live LLM provider — the request still
+    // fails at the same free-text-parsing step, the same honest degraded
+    // status the no-renal-params test above already covers.
+    await registerAndLogin(page, uniqueEmail());
+    await page.goto('/chats');
+    await page.getByRole('button', { name: 'New chat' }).click();
+    await expect(page).toHaveURL(/\/chats\/[0-9a-f-]+/);
+
+    await page
+      .getByPlaceholder(/List medications, one per line/)
+      .fill(RENAL_THRESHOLD_MEDICATION_LIST);
+    await page.getByRole('checkbox', { name: /include renal function/i }).check();
+    await page.getByLabel(/^Age \(years\)/).fill(IMPAIRED_RENAL_PARAMETERS.ageYears);
+    await page.getByLabel(/^Weight \(kg\)/).fill(IMPAIRED_RENAL_PARAMETERS.weightKg);
+    await page.getByLabel(/^Sex/).selectOption(IMPAIRED_RENAL_PARAMETERS.sex);
+    await page.getByLabel(/Serum creatinine/).fill(IMPAIRED_RENAL_PARAMETERS.serumCreatinineMgDl);
+    await page.getByLabel(/^Height \(cm\)/).fill(IMPAIRED_RENAL_PARAMETERS.heightCm);
+
+    await page.getByRole('button', { name: 'Check for interactions' }).click();
+
+    await expect(page.getByText('No AI provider is currently reachable.')).toBeVisible({
+      timeout: 15_000,
+    });
   });
 });
