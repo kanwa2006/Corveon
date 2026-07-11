@@ -13,19 +13,38 @@
   --input: 214 32% 91%;
   --ring: 217 91% 60%;
   --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  --primary: 217 91% 60%;
+  /* 47% measured 4.28:1 against --muted (below WCAG AA's 4.5:1 for normal
+     text, e.g. the chat-list tab labels) — darkened to restore contrast,
+     verified against --muted at both the .dark class and the
+     prefers-color-scheme media query below (both already pass, untouched). */
+  --muted-foreground: 215 16% 42%;
+  /* 60% measured 3.47:1 against --primary-foreground (button text) and
+     3.63:1 against --background (link text) — both below WCAG AA's 4.5:1.
+     Darkened to restore contrast; dark-theme --primary (65%) already passes
+     against its own --primary-foreground and is left untouched. */
+  --primary: 217 91% 48%;
   --primary-foreground: 210 40% 98%;
-  --destructive: 0 72% 51%;
+  /* Same hue/saturation --evidence-conflicting started at (0 72% 51%),
+     used the same way (plain text and a /10-tinted badge, e.g.
+     chat-list-item.tsx's delete action, alert.tsx) — darkened for the same
+     reason: measured ~4.1:1 against --card/--background, below 4.5:1. */
+  --destructive: 0 72% 44%;
   --destructive-foreground: 210 40% 98%;
 
-  /* Evidence source-class palette — distinct hues, WCAG-checked against both
-     light/dark backgrounds below. */
-  --evidence-uploaded: 217 91% 60%; /* blue   — uploaded document */
-  --evidence-verified: 152 60% 36%; /* green  — verified public evidence */
+  /* Evidence source-class palette — distinct hues, used both as
+     text-on-/10-tinted-badge and as plain text on --card/--background.
+     Darkened (uploaded/verified/ai-reasoning/conflicting) to actually meet
+     WCAG AA 4.5:1 against both of those — axe found each below threshold
+     (as low as 2.10:1 for ai-reasoning) despite this comment previously
+     claiming they were already checked; org-trusted already passed
+     (5.43:1) and is untouched. Dark-theme evidence tokens (below) already
+     pass against the dark --card/--background pair (high-lightness text on
+     a dark background is the favorable direction) and are untouched. */
+  --evidence-uploaded: 217 91% 48%; /* blue   — uploaded document */
+  --evidence-verified: 152 60% 26%; /* green  — verified public evidence */
   --evidence-org-trusted: 262 52% 55%; /* violet — org-trusted evidence */
-  --evidence-ai-reasoning: 35 92% 51%; /* amber  — AI reasoning */
-  --evidence-conflicting: 0 72% 51%; /* red    — conflicting/insufficient */
+  --evidence-ai-reasoning: 35 92% 32%; /* amber  — AI reasoning */
+  --evidence-conflicting: 0 72% 44%; /* red    — conflicting/insufficient */
 
   --radius: 0.625rem;
   /* --font-sans / --font-display are injected by next/font in app/layout.tsx */
