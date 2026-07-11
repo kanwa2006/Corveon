@@ -121,6 +121,12 @@ concrete vector-store backend, mirroring the "business logic never names a provi
 pattern (ADR-0006). Chunk
 *text* always lives in Postgres regardless of which backend stores the embeddings.
 
+**Optional read replica** (`app/data/base.py`, ADR-0023): `DATABASE_READ_REPLICA_URL` is unset by
+default (every read stays on the primary); when set, `Database` builds a second engine/session
+factory and pure-read endpoints (currently `POST /chats/{id}/search`, via `ReadOnlyRlsDbDep`) use it
+instead. The RLS GUC (below) is per-connection session state, never replicated — a replica session
+gets its own `set_rls_user` call each request, identical to the primary.
+
 ## 5. Per-chat isolation (defense in depth — §10.2)
 1. **Application guard** — every query passes the active `chat_id`.
 2. **Postgres Row-Level Security** — policies keyed on `chat_id`/`user_id`.

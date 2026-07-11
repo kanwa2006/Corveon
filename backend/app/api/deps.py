@@ -34,6 +34,13 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
         yield session
 
 
+async def get_read_db(request: Request) -> AsyncIterator[AsyncSession]:
+    """A session on the read replica when one is configured, the primary
+    otherwise (ADR-0023) — use for endpoints that only ever read."""
+    async for session in request.app.state.db.replica_session():
+        yield session
+
+
 async def get_redis(request: Request) -> Redis:
     redis: Redis = request.app.state.redis
     return redis
@@ -75,6 +82,7 @@ async def get_openfda_ddi_client(request: Request) -> OpenFdaDdiClient:
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+ReadOnlyDbDep = Annotated[AsyncSession, Depends(get_read_db)]
 RedisDep = Annotated[Redis, Depends(get_redis)]
 ArqDep = Annotated[ArqRedis, Depends(get_arq_pool)]
 StorageDep = Annotated[ObjectStorage, Depends(get_storage)]
@@ -129,6 +137,18 @@ async def get_rls_scoped_db(db: DbDep, user: CurrentUserDep) -> AsyncSession:
 
 
 RlsDbDep = Annotated[AsyncSession, Depends(get_rls_scoped_db)]
+
+
+async def get_rls_scoped_read_db(db: ReadOnlyDbDep, user: CurrentUserDep) -> AsyncSession:
+    """Like ``get_rls_scoped_db``, but on the read-replica session
+    (ADR-0023). The RLS GUC is transaction-local *session* state — never
+    replicated between physical connections — so a replica session needs
+    this identical per-request setup, not just the primary."""
+    await set_rls_user(db, user.id)
+    return db
+
+
+ReadOnlyRlsDbDep = Annotated[AsyncSession, Depends(get_rls_scoped_read_db)]
 
 
 async def get_streaming_user(

@@ -8,7 +8,7 @@ import uuid
 
 from fastapi import APIRouter
 
-from app.api.deps import CurrentUserDep, EmbeddingModelDep, RlsDbDep, SettingsDep
+from app.api.deps import CurrentUserDep, EmbeddingModelDep, ReadOnlyRlsDbDep, SettingsDep
 from app.api.routers._common import get_owned_chat_or_404
 from app.api.schemas.search import SearchHit, SearchRequest
 from app.data.repositories.chat_repository import ChatRepository
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/chats", tags=["search"])
 async def search_chat(
     chat_id: uuid.UUID,
     payload: SearchRequest,
-    db: RlsDbDep,
+    db: ReadOnlyRlsDbDep,
     current_user: CurrentUserDep,
     embedding_model: EmbeddingModelDep,
     settings: SettingsDep,

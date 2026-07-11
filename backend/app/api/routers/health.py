@@ -26,6 +26,14 @@ async def ready(request: Request, response: Response) -> dict[str, Any]:
         checks["database"] = f"error: {exc}"
         healthy = False
 
+    if request.app.state.db.has_read_replica:
+        try:
+            await request.app.state.db.ping_replica()
+            checks["database_replica"] = "ok"
+        except Exception as exc:
+            checks["database_replica"] = f"error: {exc}"
+            healthy = False
+
     try:
         await request.app.state.redis.ping()
         checks["redis"] = "ok"

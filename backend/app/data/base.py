@@ -60,7 +60,11 @@ class TimestampMixin(CreatedAtMixin):
 
 
 class Database:
-    """Owns the engine + session factory for the process lifetime."""
+    """Owns the engine + session factory for the process lifetime. Optionally
+    also owns a second engine + session factory for a read replica
+    (ADR-0023) — built only when ``DATABASE_READ_REPLICA_URL`` is set;
+    ``replica_session()`` falls back to the primary factory when it isn't, so
+    callers never need their own "is a replica configured?" branch."""
 
     def __init__(self, settings: Settings) -> None:
         self._engine: AsyncEngine = create_async_engine(
@@ -73,18 +77,48 @@ class Database:
             bind=self._engine, expire_on_commit=False, class_=AsyncSession
         )
 
+        self._replica_engine: AsyncEngine | None = None
+        self._replica_session_factory: async_sessionmaker[AsyncSession] | None = None
+        if settings.DATABASE_READ_REPLICA_URL:
+            self._replica_engine = create_async_engine(
+                settings.DATABASE_READ_REPLICA_URL,
+                pool_size=settings.DATABASE_POOL_SIZE,
+                max_overflow=settings.DATABASE_MAX_OVERFLOW,
+                pool_pre_ping=True,
+            )
+            self._replica_session_factory = async_sessionmaker(
+                bind=self._replica_engine, expire_on_commit=False, class_=AsyncSession
+            )
+
     @property
     def engine(self) -> AsyncEngine:
         return self._engine
 
+    @property
+    def has_read_replica(self) -> bool:
+        return self._replica_session_factory is not None
+
     async def dispose(self) -> None:
         await self._engine.dispose()
+        if self._replica_engine is not None:
+            await self._replica_engine.dispose()
 
     async def session(self) -> AsyncIterator[AsyncSession]:
         async with self._session_factory() as session:
             yield session
 
+    async def replica_session(self) -> AsyncIterator[AsyncSession]:
+        factory = self._replica_session_factory or self._session_factory
+        async with factory() as session:
+            yield session
+
     async def ping(self) -> bool:
         async with self._session_factory() as session:
+            await session.execute(text("SELECT 1"))
+        return True
+
+    async def ping_replica(self) -> bool:
+        factory = self._replica_session_factory or self._session_factory
+        async with factory() as session:
             await session.execute(text("SELECT 1"))
         return True
