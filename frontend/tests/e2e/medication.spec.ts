@@ -1,8 +1,12 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  CURRENT_MEDICATION_LIST_WITH_DISCREPANCY,
   IMPAIRED_RENAL_PARAMETERS,
   INTERACTING_MEDICATION_LIST,
+  PIP_SCREENING_MEDICATION_LIST,
+  PIP_SCREENING_PARAMETERS,
+  PREVIOUS_MEDICATION_LIST,
   RENAL_THRESHOLD_MEDICATION_LIST,
 } from './fixtures/medications';
 
@@ -110,6 +114,93 @@ test.describe('medication safety', () => {
     await page.getByLabel(/^Sex/).selectOption(IMPAIRED_RENAL_PARAMETERS.sex);
     await page.getByLabel(/Serum creatinine/).fill(IMPAIRED_RENAL_PARAMETERS.serumCreatinineMgDl);
     await page.getByLabel(/^Height \(cm\)/).fill(IMPAIRED_RENAL_PARAMETERS.heightCm);
+
+    await page.getByRole('button', { name: 'Check for interactions' }).click();
+
+    await expect(page.getByText('No AI provider is currently reachable.')).toBeVisible({
+      timeout: 15_000,
+    });
+  });
+
+  test('PIP screening fields are hidden until the checkbox is checked, and the trigger stays disabled until age is filled', async ({
+    page,
+  }) => {
+    await registerAndLogin(page, uniqueEmail());
+    await page.goto('/chats');
+    await page.getByRole('button', { name: 'New chat' }).click();
+    await expect(page).toHaveURL(/\/chats\/[0-9a-f-]+/);
+
+    await page
+      .getByPlaceholder(/List medications, one per line/)
+      .fill(PIP_SCREENING_MEDICATION_LIST);
+    await expect(page.getByLabel(/^Age \(years\)/)).not.toBeVisible();
+
+    await page.getByRole('checkbox', { name: /screen for inappropriate prescribing/i }).check();
+    await expect(page.getByLabel(/^Age \(years\)/)).toBeVisible();
+    // PIP screening needs no other renal field — weight/sex/etc. stay hidden.
+    await expect(page.getByLabel(/^Weight \(kg\)/)).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check for interactions' })).toBeDisabled();
+
+    await page.getByLabel(/^Age \(years\)/).fill(PIP_SCREENING_PARAMETERS.ageYears);
+    await expect(page.getByRole('button', { name: 'Check for interactions' })).toBeEnabled();
+  });
+
+  test('checking for inappropriate-prescribing findings in degraded mode shows an honest status', async ({
+    page,
+  }) => {
+    await registerAndLogin(page, uniqueEmail());
+    await page.goto('/chats');
+    await page.getByRole('button', { name: 'New chat' }).click();
+    await expect(page).toHaveURL(/\/chats\/[0-9a-f-]+/);
+
+    await page
+      .getByPlaceholder(/List medications, one per line/)
+      .fill(PIP_SCREENING_MEDICATION_LIST);
+    await page.getByRole('checkbox', { name: /screen for inappropriate prescribing/i }).check();
+    await page.getByLabel(/^Age \(years\)/).fill(PIP_SCREENING_PARAMETERS.ageYears);
+    await page.getByLabel(/Conditions/).fill(PIP_SCREENING_PARAMETERS.conditions);
+
+    await page.getByRole('button', { name: 'Check for interactions' }).click();
+
+    await expect(page.getByText('No AI provider is currently reachable.')).toBeVisible({
+      timeout: 15_000,
+    });
+  });
+
+  test('the previous-medication-list field is hidden until the checkbox is checked, and the trigger stays disabled until it is filled', async ({
+    page,
+  }) => {
+    await registerAndLogin(page, uniqueEmail());
+    await page.goto('/chats');
+    await page.getByRole('button', { name: 'New chat' }).click();
+    await expect(page).toHaveURL(/\/chats\/[0-9a-f-]+/);
+
+    await page
+      .getByPlaceholder(/List medications, one per line/)
+      .fill(CURRENT_MEDICATION_LIST_WITH_DISCREPANCY);
+    await expect(page.getByPlaceholder(/List the previous medications/)).not.toBeVisible();
+
+    await page.getByRole('checkbox', { name: /compare to a previous medication list/i }).check();
+    await expect(page.getByPlaceholder(/List the previous medications/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check for interactions' })).toBeDisabled();
+
+    await page.getByPlaceholder(/List the previous medications/).fill(PREVIOUS_MEDICATION_LIST);
+    await expect(page.getByRole('button', { name: 'Check for interactions' })).toBeEnabled();
+  });
+
+  test('checking for discrepancies against a previous medication list in degraded mode shows an honest status', async ({
+    page,
+  }) => {
+    await registerAndLogin(page, uniqueEmail());
+    await page.goto('/chats');
+    await page.getByRole('button', { name: 'New chat' }).click();
+    await expect(page).toHaveURL(/\/chats\/[0-9a-f-]+/);
+
+    await page
+      .getByPlaceholder(/List medications, one per line/)
+      .fill(CURRENT_MEDICATION_LIST_WITH_DISCREPANCY);
+    await page.getByRole('checkbox', { name: /compare to a previous medication list/i }).check();
+    await page.getByPlaceholder(/List the previous medications/).fill(PREVIOUS_MEDICATION_LIST);
 
     await page.getByRole('button', { name: 'Check for interactions' }).click();
 

@@ -50,7 +50,7 @@ class MedicationRepository:
         self,
         *,
         chat_id: uuid.UUID,
-        medication_a_id: uuid.UUID,
+        medication_a_id: uuid.UUID | None,
         medication_b_id: uuid.UUID | None,
         type: FindingType,
         severity: FindingSeverity,

@@ -1,12 +1,18 @@
 """Medication-Safety Engine endpoint (docs/API.md — Evidence & medication,
-blueprint §9). Normalization + DDI detection (Phase 1) and renal/dose
-checks (Phase 2, ADR-0005). ``POST`` is 202 + SSE: a ``medication`` event
-per normalized/persisted medication, an ``interaction`` event per DDI
-finding, a ``renal`` event per renal-dosing threshold finding (only when
-the request supplied renal parameters), a final ``done`` event, or an
-``error`` event on a degraded-mode condition — same shape as
-``POST /chats/{id}/verify`` (ADR-0007: the browser connects to this
-endpoint directly for SSE, authenticating via a stream ticket)."""
+blueprint §9). Normalization + DDI detection (Phase 1), renal/dose checks
+(Phase 2, ADR-0005), and PIP screening + discrepancy classification
+(Phase 3, ADR-0019). ``POST`` is 202 + SSE: a ``medication`` event per
+normalized/persisted current-list medication, a ``previous_medication``
+event per previous-list medication (only when ``previous_raw_text`` is
+supplied), an ``interaction`` event per DDI finding, a ``renal`` event per
+renal-dosing threshold finding (only when the request supplied renal
+parameters), a ``pip`` event per potentially-inappropriate-prescribing
+finding (only when the request supplied ``age_years``), a ``discrepancy``
+event per medication-list diff finding (only when the request supplied
+``previous_raw_text``), a final ``done`` event, or an ``error`` event on a
+degraded-mode condition — same shape as ``POST /chats/{id}/verify``
+(ADR-0007: the browser connects to this endpoint directly for SSE,
+authenticating via a stream ticket)."""
 
 from __future__ import annotations
 
@@ -26,10 +32,12 @@ from app.api.deps import (
 )
 from app.api.routers._common import get_owned_chat_or_404
 from app.api.schemas.medication import (
+    DiscrepancyFindingEvent,
     InteractionFindingEvent,
     MedicationAnalysisDoneEvent,
     MedicationAnalyzeRequest,
     MedicationEvent,
+    PipFindingEvent,
     RenalFindingEvent,
 )
 from app.data.repositories.audit_log_repository import AuditLogRepository
@@ -39,6 +47,8 @@ from app.data.rls import commit_and_reapply_rls
 from app.medication.analysis_service import (
     InteractionFindingResult,
     NormalizedMedicationResult,
+    PipFindingResult,
+    RenalFindingResult,
     run_medication_analysis,
 )
 from app.providers.budget import LLMCallBudgetExceededError
@@ -83,6 +93,9 @@ async def analyze_medications(
                 chat_id=chat_id,
                 raw_text=payload.raw_text,
                 renal_params=renal_params,
+                age_years=payload.age_years,
+                conditions=payload.conditions,
+                previous_raw_text=payload.previous_raw_text,
                 provider_registry=provider_registry,
                 rxnorm_client=rxnorm_client,
                 openfda_ddi_client=openfda_ddi_client,
@@ -93,7 +106,7 @@ async def analyze_medications(
                 await commit_and_reapply_rls(db, current_user.id)
                 if isinstance(item, NormalizedMedicationResult):
                     yield {
-                        "event": "medication",
+                        "event": "previous_medication" if item.is_previous else "medication",
                         "data": MedicationEvent(
                             id=item.id,
                             raw_text=item.raw_text,
@@ -118,7 +131,7 @@ async def analyze_medications(
                             provenance=item.provenance,
                         ).model_dump_json(),
                     }
-                else:
+                elif isinstance(item, RenalFindingResult):
                     yield {
                         "event": "renal",
                         "data": RenalFindingEvent(
@@ -130,6 +143,36 @@ async def analyze_medications(
                             severity=item.severity,
                             rule_id=item.rule_id,
                             explanation=item.explanation,
+                        ).model_dump_json(),
+                    }
+                elif isinstance(item, PipFindingResult):
+                    yield {
+                        "event": "pip",
+                        "data": PipFindingEvent(
+                            id=item.id,
+                            medication_id=item.medication_id,
+                            source=item.source,
+                            direction=item.direction,
+                            severity=item.severity,
+                            rule_id=item.rule_id,
+                            drug_names=item.drug_names,
+                            matched_condition=item.matched_condition,
+                            explanation=item.explanation,
+                            narrative=item.narrative,
+                        ).model_dump_json(),
+                    }
+                else:
+                    yield {
+                        "event": "discrepancy",
+                        "data": DiscrepancyFindingEvent(
+                            id=item.id,
+                            kind=item.kind,
+                            current_medication_id=item.current_medication_id,
+                            previous_medication_id=item.previous_medication_id,
+                            rule_id=item.rule_id,
+                            explanation=item.explanation,
+                            narrative=item.narrative,
+                            provenance=item.provenance,
                         ).model_dump_json(),
                     }
             await db.commit()

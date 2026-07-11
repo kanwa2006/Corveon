@@ -24,5 +24,7 @@ once `Accepted`; to change a decision, add a new ADR that supersedes the old one
 | [0016](0016-sse-stream-ticket-bridge.md) | Short-lived stream ticket bridges httpOnly-cookie auth to direct-to-backend SSE | Accepted |
 | [0017](0017-evidence-cache-via-redis-not-postgres-table.md) | External evidence cache lives in Redis, not a Postgres `external_cache` table | Accepted |
 | [0018](0018-ddinter-loader-location-and-no-bundled-dataset.md) | DDInter loader lives in `backend/app/medication/`; the real dataset is never bundled | Accepted |
+| [0019](0019-pip-criteria-encoding.md) | Beers 2023 + STOPP/START v3 as pinned `pip_criteria` rows; nullable `medication_a_id` for START omissions | Accepted |
+| [0020](0020-guardrailed-explanation-narrative.md) | Guardrailed LLM narrative scoped to PIP + discrepancy findings only | Accepted |
 
 New ADRs use [`_template.md`](_template.md) and the next sequential number.

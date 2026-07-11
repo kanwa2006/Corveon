@@ -1,9 +1,10 @@
 /**
  * Medication-Safety Engine (Phase 1: normalization + drug-drug interaction
- * detection; Phase 2: renal/dose checks, ADR-0005) — streams claim-by-claim
- * results from a direct fetch against the backend (ADR-0007), authenticated
- * with the same short-lived stream ticket bridge messages.ts/evidence.ts
- * already use (ADR-0016).
+ * detection; Phase 2: renal/dose checks, ADR-0005; Phase 3: PIP screening
+ * — Beers 2023 + STOPP/START v3 — and discrepancy classification,
+ * ADR-0019/ADR-0020) — streams claim-by-claim results from a direct fetch
+ * against the backend (ADR-0007), authenticated with the same short-lived
+ * stream ticket bridge messages.ts/evidence.ts already use (ADR-0016).
  */
 
 export interface NormalizedMedication {
@@ -54,12 +55,64 @@ export interface RenalFinding {
   explanation: string;
 }
 
+export type PipSource = 'beers_2023' | 'stopp_v3' | 'start_v3';
+export type PipDirection = 'avoid' | 'start_consider';
+
+export interface PipFinding {
+  id: string;
+  /** Null for a START-criterion finding — it flags a medication missing
+   * from the current list, not one present in it (ADR-0019). */
+  medication_id: string | null;
+  source: PipSource;
+  direction: PipDirection;
+  severity: FindingSeverity;
+  rule_id: string;
+  drug_names: string[];
+  matched_condition: string | null;
+  explanation: string;
+  /** Guardrail-checked plain-language rendering of `explanation`
+   * (ADR-0020); null when unavailable or it failed the grounding check —
+   * `explanation` is always present regardless. */
+  narrative: string | null;
+}
+
+export type DiscrepancyKind = 'added' | 'omitted' | 'dose_changed' | 'frequency_changed';
+
+export interface DiscrepancyFinding {
+  id: string;
+  kind: DiscrepancyKind;
+  current_medication_id: string | null;
+  previous_medication_id: string | null;
+  rule_id: string;
+  explanation: string;
+  narrative: string | null;
+  provenance: Record<string, unknown>;
+}
+
+/** Every field the analyze endpoint accepts besides `raw_text`, all
+ * optional and independently gated (docs/API.md): the four
+ * renal-only fields are all-or-nothing together and require `age_years`;
+ * `age_years` alone triggers PIP screening; `previous_raw_text` triggers
+ * discrepancy classification. */
+export interface AnalysisParameters {
+  age_years?: number;
+  weight_kg?: number;
+  sex?: Sex;
+  serum_creatinine_mg_dl?: number;
+  height_cm?: number;
+  conditions?: string[];
+  previous_raw_text?: string;
+}
+
 const SSE_BASE_URL = process.env.NEXT_PUBLIC_SSE_BASE_URL ?? 'http://localhost:8000';
 
 export interface StreamMedicationAnalysisCallbacks {
   onMedication: (medication: NormalizedMedication) => void;
+  onPreviousMedication: (medication: NormalizedMedication) => void;
   onInteraction: (finding: InteractionFinding) => void;
   onRenal: (finding: RenalFinding) => void;
+  onPip: (finding: PipFinding) => void;
+  onDiscrepancy: (finding: DiscrepancyFinding) => void;
   onDone: () => void;
   onError: (errorCode: string, message: string) => void;
 }
@@ -80,7 +133,7 @@ function parseSseBlock(rawBlock: string): { event: string; data: string } | null
 export async function streamMedicationAnalysis(
   chatId: string,
   rawText: string,
-  renalParams: RenalParameters | null,
+  params: AnalysisParameters | null,
   ticket: string,
   callbacks: StreamMedicationAnalysisCallbacks,
   signal?: AbortSignal,
@@ -92,7 +145,7 @@ export async function streamMedicationAnalysis(
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_text: rawText, ...renalParams }),
+        body: JSON.stringify({ raw_text: rawText, ...params }),
         signal,
       },
     );
@@ -130,10 +183,16 @@ export async function streamMedicationAnalysis(
       const parsed = parseSseBlock(rawBlock);
       if (parsed?.event === 'medication') {
         callbacks.onMedication(JSON.parse(parsed.data) as NormalizedMedication);
+      } else if (parsed?.event === 'previous_medication') {
+        callbacks.onPreviousMedication(JSON.parse(parsed.data) as NormalizedMedication);
       } else if (parsed?.event === 'interaction') {
         callbacks.onInteraction(JSON.parse(parsed.data) as InteractionFinding);
       } else if (parsed?.event === 'renal') {
         callbacks.onRenal(JSON.parse(parsed.data) as RenalFinding);
+      } else if (parsed?.event === 'pip') {
+        callbacks.onPip(JSON.parse(parsed.data) as PipFinding);
+      } else if (parsed?.event === 'discrepancy') {
+        callbacks.onDiscrepancy(JSON.parse(parsed.data) as DiscrepancyFinding);
       } else if (parsed?.event === 'done') {
         callbacks.onDone();
       } else if (parsed?.event === 'error') {

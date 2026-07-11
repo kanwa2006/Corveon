@@ -37,5 +37,19 @@ DATABASE_URL=... python -m app.medication.ddinter_loader path/to/snapshot.csv --
 Expects a UTF-8 CSV with columns `drug_a,drug_b,severity,description` (`severity` one of DDInter's
 own `major`/`moderate`/`minor` scale). Pass `--checksum <sha256>` to verify against a previously
 reviewed checksum; a mismatch aborts the import rather than silently ingesting a different file.
-Remaining sources (Beers 2023, STOPP/START v3, RxNorm's monthly release) are later Medication-Safety
-Engine phases (see [../../docs/ROADMAP.md](../../docs/ROADMAP.md)) — not yet implemented.
+
+```
+DATABASE_URL=... python -m app.medication.pip_loader path/to/beers2023.csv \
+    --source-label beers2023 --version 2023
+DATABASE_URL=... python -m app.medication.pip_loader path/to/stopp_start_v3.csv \
+    --source-label stopp_start_v3 --version 3
+```
+Expects a UTF-8 CSV with columns `source,criterion_id,drug_names,condition_keywords,direction,
+rationale,recommendation,severity` (`source` one of `beers_2023`/`stopp_v3`/`start_v3`; `drug_names`
+and `condition_keywords` are `|`-pipe-separated within their cell, an empty `condition_keywords`
+cell meaning the criterion is unconditional; `direction` one of `avoid`/`start_consider`). Same
+`--checksum` guard as the DDInter loader.
+
+RxNorm's monthly release loader is a later Medication-Safety Engine phase (see
+[../../docs/ROADMAP.md](../../docs/ROADMAP.md)) — not yet implemented; normalization currently goes
+through the live RxNav API (`app/medication/rxnorm_client.py`), not a pinned snapshot.

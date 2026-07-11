@@ -3,19 +3,25 @@
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
+  ClipboardList,
   ExternalLink,
+  GitCompare,
   Pill,
   ShieldAlert,
   ShieldQuestion,
+  Sparkles,
   Stethoscope,
 } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import type {
+  AnalysisParameters,
+  DiscrepancyFinding,
   FindingSeverity,
   InteractionFinding,
   NormalizedMedication,
+  PipFinding,
   RenalFinding,
   RenalParameters,
   Sex,
@@ -45,6 +51,19 @@ const SEVERITY_LABEL: Record<FindingSeverity, string> = {
 const SOURCE_LABEL: Record<string, string> = {
   ddinter: 'DDInter 2.0',
   openfda_label: 'openFDA label',
+};
+
+const PIP_SOURCE_LABEL: Record<string, string> = {
+  beers_2023: 'AGS Beers Criteria 2023',
+  stopp_v3: 'STOPP v3',
+  start_v3: 'START v3',
+};
+
+const DISCREPANCY_KIND_LABEL: Record<string, string> = {
+  added: 'Added',
+  omitted: 'Omitted',
+  dose_changed: 'Dose changed',
+  frequency_changed: 'Frequency changed',
 };
 
 function SeverityBadge({ severity }: { severity: FindingSeverity }): React.JSX.Element {
@@ -165,13 +184,103 @@ function RenalFindingCard({
   );
 }
 
+/** A guardrail-checked plain-language narrative (ADR-0020), visually
+ * distinguished from the deterministic `explanation` above it — never the
+ * only text shown for a finding. */
+function NarrativeNote({ narrative }: { narrative: string | null }): React.JSX.Element | null {
+  if (!narrative) return null;
+  return (
+    <p className="mt-1.5 flex items-start gap-1 text-xs italic text-muted-foreground/80">
+      <Sparkles className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+      {narrative}
+    </p>
+  );
+}
+
+function PipFindingCard({
+  finding,
+  medicationNameById,
+}: {
+  finding: PipFinding;
+  medicationNameById: Map<string, string>;
+}): React.JSX.Element {
+  const subject = finding.medication_id
+    ? (medicationNameById.get(finding.medication_id) ?? 'a medication')
+    : finding.drug_names.join(' / ');
+
+  return (
+    <motion.li
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-lg border border-border bg-card p-3"
+    >
+      <p className="flex items-center gap-1.5 text-sm font-medium text-card-foreground">
+        <ClipboardList className="h-3.5 w-3.5 shrink-0 text-evidence-uploaded" aria-hidden="true" />
+        {finding.direction === 'start_consider' ? `Consider starting: ${subject}` : subject}
+      </p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <SeverityBadge severity={finding.severity} />
+        <span className="text-xs text-muted-foreground">
+          {PIP_SOURCE_LABEL[finding.source] ?? finding.source}
+        </span>
+        {finding.matched_condition && (
+          <span className="text-xs text-muted-foreground">
+            given &quot;{finding.matched_condition}&quot;
+          </span>
+        )}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{finding.explanation}</p>
+      <NarrativeNote narrative={finding.narrative} />
+    </motion.li>
+  );
+}
+
+function DiscrepancyFindingCard({
+  finding,
+  currentMedicationNameById,
+  previousMedicationNameById,
+}: {
+  finding: DiscrepancyFinding;
+  currentMedicationNameById: Map<string, string>;
+  previousMedicationNameById: Map<string, string>;
+}): React.JSX.Element {
+  const name = finding.current_medication_id
+    ? (currentMedicationNameById.get(finding.current_medication_id) ?? 'a medication')
+    : finding.previous_medication_id
+      ? (previousMedicationNameById.get(finding.previous_medication_id) ?? 'a medication')
+      : 'a medication';
+
+  return (
+    <motion.li
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-lg border border-border bg-card p-3"
+    >
+      <p className="flex items-center gap-1.5 text-sm font-medium text-card-foreground">
+        <GitCompare className="h-3.5 w-3.5 shrink-0 text-evidence-uploaded" aria-hidden="true" />
+        {name}
+      </p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+          {DISCREPANCY_KIND_LABEL[finding.kind] ?? finding.kind}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{finding.explanation}</p>
+      <NarrativeNote narrative={finding.narrative} />
+    </motion.li>
+  );
+}
+
 interface MedicationPanelProps {
   status: MedicationAnalysisStatus;
   medications: NormalizedMedication[];
+  previousMedications: NormalizedMedication[];
   findings: InteractionFinding[];
   renalFindings: RenalFinding[];
+  pipFindings: PipFinding[];
+  discrepancyFindings: DiscrepancyFinding[];
   errorMessage: string | null;
-  onAnalyze: (rawText: string, renalParams: RenalParameters | null) => void;
+  onAnalyze: (rawText: string, params: AnalysisParameters | null) => void;
   onReset: () => void;
 }
 
@@ -181,42 +290,74 @@ const inputClassName =
 export function MedicationPanel({
   status,
   medications,
+  previousMedications,
   findings,
   renalFindings,
+  pipFindings,
+  discrepancyFindings,
   errorMessage,
   onAnalyze,
   onReset,
 }: MedicationPanelProps): React.JSX.Element {
   const [draft, setDraft] = useState('');
   const [showRenal, setShowRenal] = useState(false);
+  const [showPip, setShowPip] = useState(false);
+  const [showDiscrepancy, setShowDiscrepancy] = useState(false);
   const [ageYears, setAgeYears] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [sex, setSex] = useState<Sex>('female');
   const [serumCreatinine, setSerumCreatinine] = useState('');
   const [heightCm, setHeightCm] = useState('');
+  const [conditions, setConditions] = useState('');
+  const [previousDraft, setPreviousDraft] = useState('');
 
   const isBusy = status === 'starting' || status === 'streaming';
   const medicationNameById = new Map(medications.map((m) => [m.id, m.name]));
+  const previousMedicationNameById = new Map(previousMedications.map((m) => [m.id, m.name]));
+  const ageRequired = showRenal || showPip;
+  const ageFilled = ageYears.trim() !== '';
   const renalFieldsComplete =
     ageYears.trim() !== '' &&
     weightKg.trim() !== '' &&
     serumCreatinine.trim() !== '' &&
     heightCm.trim() !== '';
-  const canAnalyze = draft.trim() !== '' && (!showRenal || renalFieldsComplete);
+  const discrepancyFieldComplete = previousDraft.trim() !== '';
+  const canAnalyze =
+    draft.trim() !== '' &&
+    (!showRenal || renalFieldsComplete) &&
+    (!ageRequired || ageFilled) &&
+    (!showDiscrepancy || discrepancyFieldComplete);
 
   const handleAnalyze = (): void => {
     if (!canAnalyze || isBusy) return;
-    const renalParams: RenalParameters | null =
+    const renalPart: Partial<RenalParameters> =
       showRenal && renalFieldsComplete
         ? {
-            age_years: Number(ageYears),
             weight_kg: Number(weightKg),
             sex,
             serum_creatinine_mg_dl: Number(serumCreatinine),
             height_cm: Number(heightCm),
           }
+        : {};
+    const params: AnalysisParameters | null =
+      ageFilled || discrepancyFieldComplete
+        ? {
+            ...(ageFilled ? { age_years: Number(ageYears) } : {}),
+            ...renalPart,
+            ...(showPip
+              ? {
+                  conditions: conditions
+                    .split(',')
+                    .map((c) => c.trim())
+                    .filter((c) => c.length > 0),
+                }
+              : {}),
+            ...(showDiscrepancy && discrepancyFieldComplete
+              ? { previous_raw_text: previousDraft.trim() }
+              : {}),
+          }
         : null;
-    onAnalyze(draft.trim(), renalParams);
+    onAnalyze(draft.trim(), params);
   };
 
   return (
@@ -260,7 +401,29 @@ export function MedicationPanel({
             Cockcroft-Gault + CKD-EPI 2021
           </label>
 
-          {showRenal && (
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={showPip}
+              onChange={(e) => setShowPip(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            Screen for inappropriate prescribing (optional) — Beers Criteria 2023 + STOPP/START v3,
+            ages 65+
+          </label>
+
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={showDiscrepancy}
+              onChange={(e) => setShowDiscrepancy(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            Compare to a previous medication list (optional) — flags added, omitted, and
+            dose/frequency changes
+          </label>
+
+          {ageRequired && (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
                 Age (years)
@@ -273,51 +436,81 @@ export function MedicationPanel({
                   className={inputClassName}
                 />
               </label>
-              <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
-                Weight (kg)
-                <input
-                  type="number"
-                  min={0}
-                  step="0.1"
-                  value={weightKg}
-                  onChange={(e) => setWeightKg(e.target.value)}
-                  className={inputClassName}
-                />
-              </label>
-              <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
-                Sex
-                <select
-                  value={sex}
-                  onChange={(e) => setSex(e.target.value as Sex)}
-                  className={inputClassName}
-                >
-                  <option value="female">Female</option>
-                  <option value="male">Male</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
-                Serum creatinine (mg/dL)
-                <input
-                  type="number"
-                  min={0}
-                  step="0.1"
-                  value={serumCreatinine}
-                  onChange={(e) => setSerumCreatinine(e.target.value)}
-                  className={inputClassName}
-                />
-              </label>
-              <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
-                Height (cm)
-                <input
-                  type="number"
-                  min={0}
-                  step="0.1"
-                  value={heightCm}
-                  onChange={(e) => setHeightCm(e.target.value)}
-                  className={inputClassName}
-                />
-              </label>
+              {showRenal && (
+                <>
+                  <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+                    Weight (kg)
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={weightKg}
+                      onChange={(e) => setWeightKg(e.target.value)}
+                      className={inputClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+                    Sex
+                    <select
+                      value={sex}
+                      onChange={(e) => setSex(e.target.value as Sex)}
+                      className={inputClassName}
+                    >
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+                    Serum creatinine (mg/dL)
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={serumCreatinine}
+                      onChange={(e) => setSerumCreatinine(e.target.value)}
+                      className={inputClassName}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+                    Height (cm)
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={heightCm}
+                      onChange={(e) => setHeightCm(e.target.value)}
+                      className={inputClassName}
+                    />
+                  </label>
+                </>
+              )}
             </div>
+          )}
+
+          {showPip && (
+            <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+              Conditions (comma-separated, optional)
+              <input
+                type="text"
+                value={conditions}
+                onChange={(e) => setConditions(e.target.value)}
+                placeholder="e.g. heart failure, osteoporosis"
+                className={inputClassName}
+              />
+            </label>
+          )}
+
+          {showDiscrepancy && (
+            <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+              Previous medication list
+              <textarea
+                value={previousDraft}
+                onChange={(e) => setPreviousDraft(e.target.value)}
+                placeholder="List the previous medications, one per line"
+                rows={2}
+                className="min-h-[3rem] resize-none rounded-md border border-input bg-transparent px-3 py-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </label>
           )}
 
           <Button
@@ -351,6 +544,19 @@ export function MedicationPanel({
         </ul>
       )}
 
+      {previousMedications.length > 0 && (
+        <div className="flex flex-col gap-1.5 border-t border-border pt-2">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Previous list
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {previousMedications.map((medication) => (
+              <MedicationChip key={medication.id} medication={medication} />
+            ))}
+          </ul>
+        </div>
+      )}
+
       {findings.length > 0 && (
         <ul className="flex flex-col gap-2 border-t border-border pt-2">
           {findings.map((finding) => (
@@ -370,6 +576,31 @@ export function MedicationPanel({
               key={finding.id}
               finding={finding}
               medicationNameById={medicationNameById}
+            />
+          ))}
+        </ul>
+      )}
+
+      {pipFindings.length > 0 && (
+        <ul className="flex flex-col gap-2 border-t border-border pt-2">
+          {pipFindings.map((finding) => (
+            <PipFindingCard
+              key={finding.id}
+              finding={finding}
+              medicationNameById={medicationNameById}
+            />
+          ))}
+        </ul>
+      )}
+
+      {discrepancyFindings.length > 0 && (
+        <ul className="flex flex-col gap-2 border-t border-border pt-2">
+          {discrepancyFindings.map((finding) => (
+            <DiscrepancyFindingCard
+              key={finding.id}
+              finding={finding}
+              currentMedicationNameById={medicationNameById}
+              previousMedicationNameById={previousMedicationNameById}
             />
           ))}
         </ul>

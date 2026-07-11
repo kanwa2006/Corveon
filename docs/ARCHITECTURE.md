@@ -141,13 +141,16 @@ shown once it resolves to a real record at its source (fabricated-citation guard
 `app/evidence/citation_verification.py`) — never LLM-generated.
 
 ## 8. Medication-Safety Engine
-Phase 1 + Phase 2 implemented Month 6-12 (`app/medication/`, `POST /chats/{id}/medications/analyze`
-— see [API.md](API.md)): free-text medication parsing (LLM, guardrailed to extract only name/dose/
-route/frequency already present in the text — never infers or adds a fact), RxNorm/RxCUI
-normalization, deterministic drug-drug interaction detection (Phase 1), and deterministic
-renal-dosing threshold checks (Phase 2). **The rules engine is the source of truth** (CLAUDE.md §6)
-— neither DDI detection nor renal checks make an LLM call; the free-text parsing step is the
-pipeline's only one, regardless of which checks run after it.
+Phase 1 + Phase 2 + Phase 3 implemented Month 6-12 (`app/medication/`,
+`POST /chats/{id}/medications/analyze` — see [API.md](API.md)): free-text medication parsing (LLM,
+guardrailed to extract only name/dose/route/frequency already present in the text — never infers or
+adds a fact), RxNorm/RxCUI normalization, deterministic drug-drug interaction detection (Phase 1),
+deterministic renal-dosing threshold checks (Phase 2), deterministic potentially-inappropriate-
+prescribing screening and medication-discrepancy classification (Phase 3), plus an optional,
+guardrail-checked LLM narrative on top of the two Phase 3 finding types. **The rules engine is the
+source of truth** (CLAUDE.md §6) — DDI detection, renal checks, PIP screening, and discrepancy
+classification never make an LLM call; only free-text parsing (mandatory) and narrative generation
+(optional, degrades silently) do.
 
 DDInter 2.0 (ADR-0004) is the primary DDI source, loaded as a pinned, checksummed snapshot
 (`app/medication/ddinter_loader.py`, never fetched at request time,
@@ -158,17 +161,39 @@ is the fallback for pairs the snapshot doesn't cover, surfaced as the FDA's own 
 Renal checks (`app/medication/renal.py`, ADR-0005) implement **both** kidney-function equations
 rather than picking one, since the clinical standard is actively in transition: Cockcroft-Gault CrCl
 (the historical FDA/label standard) and the 2021 race-free CKD-EPI eGFR (de-indexed to the patient's
-own body surface area for dosing use). Renal parameters are optional and all-or-nothing on the
-request — omitting all five skips renal checks entirely (an honest "insufficient data" state);
-supplying a partial set is a `422`, not a silent skip. Only a small, documented set of
-threshold-sensitive drug classes (DOACs, aminoglycosides, vancomycin — the blueprint's own named
-examples) are checked; a finding's severity distinguishes clear impairment (both equations agree)
-from the genuine "standard in flux" case ADR-0005 exists for (the two equations land on opposite
-sides of the decision threshold).
+own body surface area for dosing use). The four renal-only parameters (weight/sex/serum creatinine/
+height) are optional and all-or-nothing together, and require `age_years`; omitting all of them
+skips renal checks entirely (an honest "insufficient data" state); supplying a partial set is a
+`422`, not a silent skip. Only a small, documented set of threshold-sensitive drug classes (DOACs,
+aminoglycosides, vancomycin — the blueprint's own named examples) are checked; a finding's severity
+distinguishes clear impairment (both equations agree) from the genuine "standard in flux" case
+ADR-0005 exists for (the two equations land on opposite sides of the decision threshold).
 
-Beers 2023 + STOPP/START v3 screens, medication-discrepancy classification, and guardrailed LLM
-explanations are later phases of this same engine, not yet implemented — see
-[ROADMAP.md](ROADMAP.md).
+**PIP screening** (`app/medication/pip_screening.py`, ADR-0019) checks the current medication list
+against every pinned AGS Beers Criteria 2023 / STOPP/START v3 row (`pip_criteria`, loaded the same
+pinned-snapshot way as DDInter — `app/medication/pip_loader.py`) whenever the request supplies
+`age_years` (independent of whether renal checks are also requested) and the patient is ≥65. AVOID
+criteria (every Beers row, and STOPP's condition-gated rows) fire when the patient takes a listed
+drug and — if condition-gated — a supplied free-text `conditions` string matches (case-insensitive
+substring) one of the criterion's keywords. START_CONSIDER criteria fire on the opposite condition:
+a matching condition **and no listed drug present anywhere in the current list** — an omission
+finding with no medication to anchor to, which is why `medication_findings.medication_a_id` is
+nullable as of this phase.
+
+**Discrepancy classification** (`app/medication/discrepancy.py`, ADR-0019) diffs two independently
+parsed-and-normalized medication lists — the request's `raw_text` (current) and, when supplied,
+`previous_raw_text` — by RxCUI first, normalized name as fallback, producing `added`/`omitted`/
+`dose_changed`/`frequency_changed` findings. This costs one additional, independent LLM parse call
+(same budget as the primary parse).
+
+**Guardrailed narrative** (`app/medication/explanation_guardrail.py`, ADR-0020) is an optional,
+additive plain-language rendering layered only on top of PIP and discrepancy findings — Phase 1/2's
+`explanation` fields are already deterministic strings with no LLM involvement and thus nothing for
+a guardrail to check. One batched LLM call (not one per finding) proposes a narrative per finding;
+a deterministic post-generation check (`check_narrative_grounded`) discards any narrative that
+introduces a medication name outside the finding's own set, a number absent from the finding's own
+data, an escalation/severity word, or an unlicensed clinical-directive phrase. A finding's
+`explanation` is always shown regardless of whether its `narrative` passed.
 
 ## 9. Deployment topology (free-tier MVP)
 Vercel (frontend static/RSC) · Fly.io/Render (FastAPI API **and** ARQ worker — the persistent
