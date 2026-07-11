@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request, status
 
-from app.api.deps import CurrentUserDep, DbDep, RedisDep, SettingsDep
+from app.api.deps import CurrentUserDep, DbDep, RedisDep, SettingsDep, SsoHttpTransportDep
 from app.api.schemas.auth import (
     AccessTokenResponse,
     LoginRequest,
@@ -18,6 +18,7 @@ from app.api.schemas.auth import (
     TokenResponse,
     UserPublic,
 )
+from app.api.schemas.sso import SsoStartRequest, SsoStartResponse
 from app.core.errors import ConflictError, UnauthorizedError
 from app.core.security import (
     InvalidTokenError,
@@ -32,6 +33,7 @@ from app.core.security import (
 from app.core.token_denylist import is_revoked, revoke
 from app.data.repositories.audit_log_repository import AuditLogRepository
 from app.data.repositories.user_repository import UserRepository
+from app.sso.service import handle_sso_callback, start_sso_login
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -86,11 +88,15 @@ async def login(
 ) -> TokenResponse:
     repo = UserRepository(db)
     user = await repo.get_by_email(payload.email)
-    if (
-        user is None
-        or not user.is_active
-        or not verify_password(payload.password, user.password_hash, settings)
-    ):
+    if user is None or not user.is_active:
+        raise UnauthorizedError("Incorrect email or password.")
+    if user.password_hash is None:
+        # SSO-only account (ADR-0025) — no local password exists to verify
+        # against. A distinct message here is deliberate, not a leak: SSO
+        # routing is already keyed on email domain, publicly discoverable
+        # the same way "sign in with Google" buttons are.
+        raise UnauthorizedError("This account signs in via SSO. Use your organization's SSO login.")
+    if not verify_password(payload.password, user.password_hash, settings):
         raise UnauthorizedError("Incorrect email or password.")
 
     await AuditLogRepository(db).create(
@@ -165,3 +171,47 @@ async def logout(
     exp = claims.get("exp")
     if jti and exp:
         await revoke(redis, jti, datetime.fromtimestamp(exp, tz=UTC))
+
+
+@router.post("/sso/start", response_model=SsoStartResponse)
+async def sso_start(
+    payload: SsoStartRequest,
+    db: DbDep,
+    redis: RedisDep,
+    settings: SettingsDep,
+    transport: SsoHttpTransportDep,
+) -> SsoStartResponse:
+    """Looks up the organization's SSO configuration by the email's domain
+    and returns the IdP's authorization URL to redirect to (ADR-0025). Not
+    authenticated — the user isn't logged in yet."""
+    redirect_url = await start_sso_login(
+        session=db, redis=redis, settings=settings, email=payload.email, transport=transport
+    )
+    return SsoStartResponse(redirect_url=redirect_url)
+
+
+@router.get("/sso/callback", response_model=TokenResponse)
+async def sso_callback(
+    code: str,
+    state: str,
+    request: Request,
+    db: DbDep,
+    redis: RedisDep,
+    settings: SettingsDep,
+    transport: SsoHttpTransportDep,
+) -> TokenResponse:
+    """The IdP redirects the browser here with an authorization code
+    (ADR-0025). Verifies the id_token, JIT-provisions or looks up the user,
+    and mints the same session shape password login does."""
+    result = await handle_sso_callback(
+        session=db, redis=redis, settings=settings, code=code, state=state, transport=transport
+    )
+    await AuditLogRepository(db).create(
+        actor_id=result.user.id,
+        action="user.sso_login",
+        entity_type="user",
+        entity_id=result.user.id,
+        ip=_client_ip(request),
+    )
+    await db.commit()
+    return TokenResponse(access=result.access, refresh=result.refresh)

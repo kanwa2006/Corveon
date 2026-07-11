@@ -79,3 +79,9 @@ async def _clean_tables(app) -> AsyncIterator[None]:  # type: ignore[no-untyped-
         )
         await session.commit()
         break
+    # Content-addressed caches (SSO discovery/JWKS, medication, evidence) key
+    # solely on the request they cache, with no test-run isolation — a
+    # literal issuer/URL reused across tests or process runs reads back a
+    # stale entry from Redis, which nothing else here clears (unlike the
+    # SQL tables truncated above).
+    await app.state.redis.flushdb()

@@ -25,6 +25,7 @@ from app.data.models.medication import (
 )
 from app.data.models.message import Message, MessageRole
 from app.data.models.organization import Organization
+from app.data.models.sso import OrgSsoConfig
 from app.data.models.user import User, UserRole
 
 __all__ = [
@@ -50,6 +51,7 @@ __all__ = [
     "MedicationFinding",
     "Message",
     "MessageRole",
+    "OrgSsoConfig",
     "Organization",
     "SourceClass",
     "User",

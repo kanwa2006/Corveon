@@ -329,8 +329,40 @@ contract. No application code. Self-review complete.
   field tests.
 - SSO remains future work — this is the last "Enterprise path" item besides it.
 
+### Enterprise path — Enterprise SSO (OIDC) ✅
+- ✅ OIDC only (Authorization Code flow + PKCE), SAML deferred (ADR-0025) — a documented seam
+  (`provider_type` column, the callback's verify → JIT-provision → mint-session shape) anticipates a
+  second implementation without a redesign, the same "one protocol now" posture as ADR-0001/ADR-0006.
+- ✅ New `org_sso_configs` table (migration `0009`, `org_id`/`email_domain` both UNIQUE);
+  `users.password_hash` becomes nullable for SSO-only accounts — `login()` gives a distinct message
+  rather than a generic auth failure when it's `NULL`.
+- ✅ Org routing by email domain, not org ID/slug — `POST /auth/sso/start {email}` → IdP →
+  `GET /auth/sso/callback?code=&state=`. `state`/PKCE `code_verifier`/`nonce` are single-use,
+  Redis-backed, 300s TTL. JIT-provisions a `User` on first login or finds an existing one by email —
+  **rejects with `403` if an existing user's `org_id` doesn't match**, so a misconfigured or
+  malicious IdP can never move a user across the per-org isolation boundary.
+- ✅ Hand-rolled async OIDC client (`app/sso/oidc_client.py`) over `httpx`, matching this codebase's
+  established external-client convention (RxNorm, openFDA, all six evidence connectors) rather than
+  pyjwt's synchronous `PyJWKClient`; discovery/JWKS responses Redis-cached via `app/sso/cache.py`
+  (mirrors `app/medication/cache.py`'s `get_or_fetch` shape). RS256 `id_token` verification checks
+  `iss`/`aud`/`exp`/`nonce` and matches JWKS by `kid`.
+- ✅ Client secret encrypted at rest (Fernet, new `SSO_CONFIG_ENCRYPTION_KEY` setting) — a narrow,
+  documented exception to "secrets via env only" (CLAUDE.md §8) since it's tenant-configured
+  integration data, not an application secret; never returned by `GET /org/sso-config`.
+- ✅ `POST/GET/DELETE /org/sso-config`, `org-admin`/`superadmin` only, always scoped to the caller's
+  own `org_id`. Backed by a production settings page (`/settings/sso`) built from the existing
+  design system (`Card`, `Button`, `Input`, `Dialog`, `AlertError`/new `AlertSuccess`) — no new admin
+  framework introduced.
+- ✅ Tests: unit (crypto round-trip, OIDC client PKCE/discovery/JWKS/token-exchange/id_token
+  verification against a mocked IdP), database-integration (full start→callback flow, JIT
+  provisioning, cross-org rejection, inactive-user/state-replay/missing-email-claim rejection), API
+  (RBAC, org-scoped isolation, secret-never-returned, full round trip via `get_sso_http_transport`
+  dependency override), frontend unit (login-form SSO tab).
+- Enterprise path is now fully complete — Qdrant, read replica, Ollama-only mode, and SSO have all
+  shipped.
+
 ### Later phases — not yet implemented
-- SSO (the one remaining "Enterprise path" item).
+- None currently scoped — see this file's top-level status for what's next.
 
 ## Cross-cutting, always-on
 Per-feature Definition of Done · docs updated per PR · ADR per resolved decision · golden tests for

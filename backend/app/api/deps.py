@@ -6,6 +6,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Annotated
 
+import httpx
 from arq.connections import ArqRedis
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -80,6 +81,15 @@ async def get_openfda_ddi_client(request: Request) -> OpenFdaDdiClient:
     return client
 
 
+async def get_sso_http_transport(request: Request) -> httpx.AsyncBaseTransport | None:
+    """``None`` in production (the SSO OIDC client makes real requests) —
+    exists only so API tests can override this with ``httpx.MockTransport``
+    for a full round-trip through the actual endpoint, the same
+    dependency-override pattern used for every other external-service
+    registry (ADR-0025)."""
+    return getattr(request.app.state, "sso_http_transport", None)
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 ReadOnlyDbDep = Annotated[AsyncSession, Depends(get_read_db)]
@@ -93,6 +103,7 @@ EvidenceConnectorRegistryDep = Annotated[
 ]
 RxNormClientDep = Annotated[RxNormClient, Depends(get_rxnorm_client)]
 OpenFdaDdiClientDep = Annotated[OpenFdaDdiClient, Depends(get_openfda_ddi_client)]
+SsoHttpTransportDep = Annotated[httpx.AsyncBaseTransport | None, Depends(get_sso_http_transport)]
 
 
 async def get_current_user(

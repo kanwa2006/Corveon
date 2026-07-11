@@ -42,6 +42,7 @@ dependencies = [
   # ── Auth / security ───────────────────────────────────────
   "argon2-cffi>=23",
   "pyjwt>=2.9",
+  "cryptography>=42",               # RS256 JWK verification + Fernet (ADR-0025)
   # ── Storage ───────────────────────────────────────────────
   "boto3>=1.35",                    # S3-compatible client for Cloudflare R2
   # ── Ingestion / embeddings / OCR ──────────────────────────
