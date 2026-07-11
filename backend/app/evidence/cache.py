@@ -11,8 +11,20 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
+from typing import Final, final
 
 from redis.asyncio import Redis
+
+
+@final
+class Unavailable:
+    """Sentinel a ``fetch`` returns when it couldn't ask the source at all
+    (rate-limit bucket empty, HTTP error) — distinct from the source
+    answering "nothing found". Never cached: caching it would turn a
+    transient outage into a durable empty result for the full TTL."""
+
+
+UNAVAILABLE: Final[Unavailable] = Unavailable()
 
 
 def _cache_key(source: str, query: str) -> str:
@@ -26,12 +38,14 @@ async def get_or_fetch(
     source: str,
     query: str,
     ttl_seconds: int,
-    fetch: Callable[[], Awaitable[list[dict[str, object]]]],
+    fetch: Callable[[], Awaitable[list[dict[str, object]] | Unavailable]],
 ) -> list[dict[str, object]]:
     """Returns cached connector results for ``query`` under ``source``, or
     calls ``fetch`` and caches the result. Results are cached as plain JSON
     dicts (not connector-specific dataclasses) so this module has no
-    dependency on any one connector's result type."""
+    dependency on any one connector's result type. A fetch that returns
+    ``UNAVAILABLE`` yields ``[]`` for this call only — nothing is cached,
+    so the next call retries the source."""
     key = _cache_key(source, query)
     cached = await redis.get(key)
     if cached is not None:
@@ -39,5 +53,7 @@ async def get_or_fetch(
         return result
 
     fetched = await fetch()
+    if isinstance(fetched, Unavailable):
+        return []
     await redis.set(key, json.dumps(fetched), ex=ttl_seconds)
     return fetched

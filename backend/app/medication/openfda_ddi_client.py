@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import httpx
 from redis.asyncio import Redis
 
-from app.medication.cache import get_or_fetch
+from app.medication.cache import UNAVAILABLE, Unavailable, get_or_fetch
 from app.providers.budget import TokenBucket
 
 _MAX_SNIPPET_CHARS = 500
@@ -68,9 +68,9 @@ class OpenFdaDdiClient:
         if not self._enabled:
             return None
 
-        async def fetch() -> dict[str, object] | None:
+        async def fetch() -> dict[str, object] | None | Unavailable:
             if not self._bucket.try_consume():
-                return None
+                return UNAVAILABLE
             return await self._fetch_from_api(label_drug, mentioned_drug)
 
         cached = await get_or_fetch(
@@ -90,7 +90,7 @@ class OpenFdaDdiClient:
 
     async def _fetch_from_api(
         self, label_drug: str, mentioned_drug: str
-    ) -> dict[str, object] | None:
+    ) -> dict[str, object] | None | Unavailable:
         escaped = label_drug.replace('"', '\\"')
         params: dict[str, str | int] = {
             "search": f'openfda.generic_name:"{escaped}"',
@@ -101,10 +101,14 @@ class OpenFdaDdiClient:
 
         async with httpx.AsyncClient(timeout=10.0, transport=self._transport) as client:
             response = await client.get(f"{self._base_url}/drug/label.json", params=params)
-        if response.status_code >= 400:
+        if response.status_code == 404:
             # openFDA returns 404 for a zero-result search, not an error
             # payload — the same as "nothing found," never a real failure.
             return None
+        if response.status_code >= 400:
+            # Anything else (429, 5xx) is the source being unreachable, not
+            # the source answering — must not be cached as a no-match.
+            return UNAVAILABLE
 
         data = response.json()
         results = data.get("results") or []

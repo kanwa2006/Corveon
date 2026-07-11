@@ -12,7 +12,7 @@ import httpx
 from redis.asyncio import Redis
 
 from app.data.models.evidence import EvidenceSourceName
-from app.evidence.cache import get_or_fetch
+from app.evidence.cache import UNAVAILABLE, Unavailable, get_or_fetch
 from app.evidence.connectors.base import EvidenceResult
 from app.providers.budget import TokenBucket
 
@@ -82,9 +82,9 @@ class PubMedConnector:
         return params
 
     async def search(self, query: str, *, limit: int = 5) -> list[EvidenceResult]:
-        async def fetch() -> list[dict[str, object]]:
+        async def fetch() -> list[dict[str, object]] | Unavailable:
             if not self._bucket.try_consume():
-                return []
+                return UNAVAILABLE
             return await self._fetch_from_api(query, limit)
 
         cached = await get_or_fetch(
@@ -96,7 +96,9 @@ class PubMedConnector:
         )
         return [EvidenceResult.from_cache_dict(row) for row in cached]
 
-    async def _fetch_from_api(self, query: str, limit: int) -> list[dict[str, object]]:
+    async def _fetch_from_api(
+        self, query: str, limit: int
+    ) -> list[dict[str, object]] | Unavailable:
         async with httpx.AsyncClient(timeout=10.0, transport=self._transport) as client:
             esearch = await client.get(
                 f"{self._base_url}/esearch.fcgi",
@@ -109,7 +111,7 @@ class PubMedConnector:
                 },
             )
             if esearch.status_code >= 400:
-                return []
+                return UNAVAILABLE
             pmids: list[str] = esearch.json().get("esearchresult", {}).get("idlist") or []
             if not pmids:
                 return []
@@ -124,7 +126,7 @@ class PubMedConnector:
                 },
             )
             if esummary.status_code >= 400:
-                return []
+                return UNAVAILABLE
 
         summary_result = esummary.json().get("result", {})
         results: list[EvidenceResult] = []

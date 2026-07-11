@@ -207,6 +207,102 @@ async def test_normalize_caches_the_result_and_does_not_refetch(app) -> None:  #
 
 
 @pytest.mark.asyncio
+async def test_a_rate_limited_lookup_is_not_cached_as_a_no_match(app) -> None:  # type: ignore[no-untyped-def]
+    """Regression: an exhausted rate-limit bucket used to cache None for the
+    full TTL — a transient burst silently exempted those drugs from safety
+    checks until the entry expired."""
+    query = f"burst-drug-{uuid.uuid4()}"
+    body = {
+        "drugGroup": {
+            "conceptGroup": [
+                {"tty": "IN", "conceptProperties": [{"rxcui": "6809", "name": "Metformin"}]},
+            ],
+        }
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=json.dumps(body))
+
+    exhausted = RxNormClient(
+        base_url="https://rxnav.nlm.nih.gov/REST",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=0,
+        transport=_transport(handler),
+    )
+    assert await exhausted.normalize(query) is None
+
+    refilled = RxNormClient(
+        base_url="https://rxnav.nlm.nih.gov/REST",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=20,
+        transport=_transport(handler),
+    )
+    match = await refilled.normalize(query)
+    assert match is not None
+    assert match.rxcui == "6809"
+
+
+@pytest.mark.asyncio
+async def test_an_http_error_is_not_cached_as_a_no_match(app) -> None:  # type: ignore[no-untyped-def]
+    query = f"flaky-drug-{uuid.uuid4()}"
+    body = {
+        "drugGroup": {
+            "conceptGroup": [
+                {"tty": "IN", "conceptProperties": [{"rxcui": "1191", "name": "Aspirin"}]},
+            ],
+        }
+    }
+    call_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(500)
+        return httpx.Response(200, content=json.dumps(body))
+
+    client = RxNormClient(
+        base_url="https://rxnav.nlm.nih.gov/REST",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=20,
+        transport=_transport(handler),
+    )
+    assert await client.normalize(query) is None
+    match = await client.normalize(query)
+    assert match is not None
+    assert match.rxcui == "1191"
+
+
+@pytest.mark.asyncio
+async def test_a_genuine_no_match_is_cached_and_not_refetched(app) -> None:  # type: ignore[no-untyped-def]
+    query = f"genuinely-unknown-{uuid.uuid4()}"
+    call_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if request.url.path.endswith("/drugs.json"):
+            return httpx.Response(200, content=json.dumps({"drugGroup": {}}))
+        return httpx.Response(200, content=json.dumps({"approximateGroup": {}}))
+
+    client = RxNormClient(
+        base_url="https://rxnav.nlm.nih.gov/REST",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=20,
+        transport=_transport(handler),
+    )
+    assert await client.normalize(query) is None
+    assert await client.normalize(query) is None
+    # First call hits both endpoints (exact, then approximate); the second
+    # must be served entirely from the cached no-match.
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_normalize_returns_none_when_rate_limit_bucket_is_exhausted(app) -> None:  # type: ignore[no-untyped-def]
     query = f"rate-limited-drug-{uuid.uuid4()}"
 
