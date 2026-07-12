@@ -14,6 +14,7 @@ from arq.connections import RedisSettings
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.sentry import configure_sentry
 from app.core.storage import create_object_storage
 from app.data.base import Database
 from app.ingestion.embeddings import get_embedding_model
@@ -30,11 +31,14 @@ logger = get_logger(__name__)
 async def on_startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     configure_logging(settings)
+    configure_sentry(settings.SENTRY_DSN, settings.CORVEON_ENV)
     ctx["settings"] = settings
     ctx["db"] = Database(settings)
     ctx["storage"] = create_object_storage(settings)
     ctx["embedding_model"] = get_embedding_model(
-        settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE
+        settings.EMBEDDING_MODEL_ID,
+        settings.EMBEDDING_DEVICE,
+        offline_only=settings.is_ollama_only,
     )
     logger.info("worker_startup_complete")
 

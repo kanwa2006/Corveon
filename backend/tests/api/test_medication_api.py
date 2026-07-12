@@ -335,6 +335,115 @@ async def test_analyze_streams_a_renal_finding_when_renal_parameters_are_supplie
 
 
 @pytest.mark.asyncio
+async def test_analyze_streams_a_renal_finding_when_rxnorm_returns_a_branded_canonical_name(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    """Regression (N1, complete normalization pipeline): RxNav's getDrugs
+    resolves real drugs to verbose branded product concepts — the renal
+    check used to silently not fire because the branded canonical name
+    replaced the ingredient name it matches on."""
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+
+    app.dependency_overrides[get_provider_registry] = lambda: _provider_registry(
+        [
+            '[{"raw_text": "apixaban 5mg BID", "name": "apixaban", "dose": "5mg", '
+            '"route": null, "frequency": "twice daily"}]'
+        ]
+    )
+    app.dependency_overrides[get_rxnorm_client] = lambda: _FakeRxNormClient(
+        RxNormMatch(
+            rxcui="562282",
+            canonical_name="apixaban 5 MG Oral Tablet [Eliquis]",
+            ingredient_names=("apixaban",),
+        )
+    )
+    app.dependency_overrides[get_openfda_ddi_client] = lambda: _FakeOpenFdaDdiClient()
+    try:
+        async with client.stream(
+            "POST",
+            f"/api/v1/chats/{chat_id}/medications/analyze",
+            json={
+                "raw_text": "apixaban 5mg BID",
+                "age_years": 85,
+                "weight_kg": 50,
+                "sex": "male",
+                "serum_creatinine_mg_dl": 3.0,
+                "height_cm": 170,
+            },
+            headers=headers,
+        ) as response:
+            assert response.status_code == 202
+            raw = await response.aread()
+    finally:
+        app.dependency_overrides.pop(get_provider_registry, None)
+        app.dependency_overrides.pop(get_rxnorm_client, None)
+        app.dependency_overrides.pop(get_openfda_ddi_client, None)
+
+    events = _parse_sse(raw.decode())
+    medication_events = [json.loads(data) for kind, data in events if kind == "medication"]
+    assert len(medication_events) == 1
+    # Display name stays the canonical (branded) string...
+    assert medication_events[0]["name"] == "apixaban 5 MG Oral Tablet [Eliquis]"
+    # ...but the renal finding still fires, via ingredient matching.
+    renal_events = [json.loads(data) for kind, data in events if kind == "renal"]
+    assert len(renal_events) == 1
+    assert renal_events[0]["severity"] == "major"
+    assert renal_events[0]["threshold_ml_min"] == 30.0
+
+
+@pytest.mark.asyncio
+async def test_analyze_streams_a_renal_finding_when_the_patient_entered_a_brand_name(
+    client: AsyncClient, auth_headers: AuthHeaders, app
+) -> None:
+    """Brand-name input ("Eliquis") can only renal-match via the RxNorm
+    ingredient names — neither the parsed name nor the branded canonical
+    equals the "apixaban" threshold key."""
+    headers = await auth_headers("alice@example.com")
+    chat_id = await _create_chat(client, headers)
+
+    app.dependency_overrides[get_provider_registry] = lambda: _provider_registry(
+        [
+            '[{"raw_text": "Eliquis 5mg BID", "name": "Eliquis", "dose": "5mg", '
+            '"route": null, "frequency": "twice daily"}]'
+        ]
+    )
+    app.dependency_overrides[get_rxnorm_client] = lambda: _FakeRxNormClient(
+        RxNormMatch(
+            rxcui="562282",
+            canonical_name="apixaban 5 MG Oral Tablet [Eliquis]",
+            ingredient_names=("apixaban",),
+        )
+    )
+    app.dependency_overrides[get_openfda_ddi_client] = lambda: _FakeOpenFdaDdiClient()
+    try:
+        async with client.stream(
+            "POST",
+            f"/api/v1/chats/{chat_id}/medications/analyze",
+            json={
+                "raw_text": "Eliquis 5mg BID",
+                "age_years": 85,
+                "weight_kg": 50,
+                "sex": "male",
+                "serum_creatinine_mg_dl": 3.0,
+                "height_cm": 170,
+            },
+            headers=headers,
+        ) as response:
+            assert response.status_code == 202
+            raw = await response.aread()
+    finally:
+        app.dependency_overrides.pop(get_provider_registry, None)
+        app.dependency_overrides.pop(get_rxnorm_client, None)
+        app.dependency_overrides.pop(get_openfda_ddi_client, None)
+
+    events = _parse_sse(raw.decode())
+    renal_events = [json.loads(data) for kind, data in events if kind == "renal"]
+    assert len(renal_events) == 1
+    assert renal_events[0]["threshold_ml_min"] == 30.0
+
+
+@pytest.mark.asyncio
 async def test_analyze_emits_no_renal_events_when_renal_parameters_are_omitted(
     client: AsyncClient, auth_headers: AuthHeaders, app
 ) -> None:

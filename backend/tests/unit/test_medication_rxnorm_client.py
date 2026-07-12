@@ -19,6 +19,21 @@ def _transport(handler):  # type: ignore[no-untyped-def]
     return httpx.MockTransport(handler)
 
 
+def _related_body(*ingredients: str) -> dict[str, object]:
+    return {
+        "relatedGroup": {
+            "conceptGroup": [
+                {
+                    "tty": "IN",
+                    "conceptProperties": [
+                        {"rxcui": f"in-{i}", "name": name} for i, name in enumerate(ingredients)
+                    ],
+                },
+            ],
+        }
+    }
+
+
 @pytest.mark.asyncio
 async def test_normalize_returns_the_first_matching_rxcui(app) -> None:  # type: ignore[no-untyped-def]
     query = f"metformin-{uuid.uuid4()}"
@@ -31,6 +46,8 @@ async def test_normalize_returns_the_first_matching_rxcui(app) -> None:  # type:
     }
 
     async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/related.json"):
+            return httpx.Response(200, content=json.dumps(_related_body("metformin")))
         assert request.url.path.endswith("/drugs.json")
         return httpx.Response(200, content=json.dumps(body))
 
@@ -83,6 +100,8 @@ async def test_normalize_falls_back_to_approximate_match_for_misspelled_name(app
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/drugs.json"):
             return httpx.Response(200, content=json.dumps({"drugGroup": {}}))
+        if request.url.path.endswith("/related.json"):
+            return httpx.Response(200, content=json.dumps(_related_body("metformin")))
         assert request.url.path.endswith("/approximateTerm.json")
         return httpx.Response(200, content=json.dumps(approximate_body))
 
@@ -121,6 +140,8 @@ async def test_approximate_match_resolves_canonical_name_when_candidate_lacks_on
             return httpx.Response(200, content=json.dumps({"drugGroup": {}}))
         if request.url.path.endswith("/approximateTerm.json"):
             return httpx.Response(200, content=json.dumps(approximate_body))
+        if request.url.path.endswith("/related.json"):
+            return httpx.Response(200, content=json.dumps(_related_body("metformin")))
         assert request.url.path.endswith("/rxcui/6809/property.json")
         return httpx.Response(200, content=json.dumps(property_body))
 
@@ -136,6 +157,89 @@ async def test_approximate_match_resolves_canonical_name_when_candidate_lacks_on
     assert match is not None
     assert match.rxcui == "6809"
     assert match.canonical_name == "metformin"
+
+
+@pytest.mark.asyncio
+async def test_match_carries_ingredient_names_from_the_related_lookup(app) -> None:  # type: ignore[no-untyped-def]
+    """Regression (N1): getDrugs frequently resolves to a branded product
+    concept ("apixaban 5 MG Oral Tablet [Eliquis]") — the match must also
+    carry the IN/MIN ingredient names the rules engines key on."""
+    query = f"apixaban-{uuid.uuid4()}"
+    drugs_body = {
+        "drugGroup": {
+            "conceptGroup": [
+                {
+                    "tty": "SBD",
+                    "conceptProperties": [
+                        {"rxcui": "562282", "name": "apixaban 5 MG Oral Tablet [Eliquis]"},
+                    ],
+                },
+            ],
+        }
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/drugs.json"):
+            return httpx.Response(200, content=json.dumps(drugs_body))
+        assert request.url.path.endswith("/rxcui/562282/related.json")
+        return httpx.Response(200, content=json.dumps(_related_body("Apixaban")))
+
+    client = RxNormClient(
+        base_url="https://rxnav.nlm.nih.gov/REST",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=20,
+        transport=_transport(handler),
+    )
+    match = await client.normalize(query)
+
+    assert match is not None
+    assert match.canonical_name == "apixaban 5 MG Oral Tablet [Eliquis]"
+    assert match.ingredient_names == ("apixaban",)
+
+
+@pytest.mark.asyncio
+async def test_a_match_is_not_cached_when_the_ingredient_lookup_is_unavailable(app) -> None:  # type: ignore[no-untyped-def]
+    """A match cached without its ingredient names would silently disable
+    renal/PIP/DDI matching for that drug until the TTL expires — a
+    transiently failing related-lookup must make the whole fetch
+    uncacheable, retried on the next call."""
+    query = f"apixaban-flaky-related-{uuid.uuid4()}"
+    drugs_body = {
+        "drugGroup": {
+            "conceptGroup": [
+                {
+                    "tty": "SBD",
+                    "conceptProperties": [
+                        {"rxcui": "562282", "name": "apixaban 5 MG Oral Tablet [Eliquis]"},
+                    ],
+                },
+            ],
+        }
+    }
+    related_calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal related_calls
+        if request.url.path.endswith("/drugs.json"):
+            return httpx.Response(200, content=json.dumps(drugs_body))
+        assert request.url.path.endswith("/related.json")
+        related_calls += 1
+        if related_calls == 1:
+            return httpx.Response(500)
+        return httpx.Response(200, content=json.dumps(_related_body("apixaban")))
+
+    client = RxNormClient(
+        base_url="https://rxnav.nlm.nih.gov/REST",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=20,
+        transport=_transport(handler),
+    )
+    assert await client.normalize(query) is None
+    match = await client.normalize(query)
+    assert match is not None
+    assert match.ingredient_names == ("apixaban",)
 
 
 @pytest.mark.asyncio
@@ -190,6 +294,8 @@ async def test_normalize_caches_the_result_and_does_not_refetch(app) -> None:  #
     async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal call_count
         call_count += 1
+        if request.url.path.endswith("/related.json"):
+            return httpx.Response(200, content=json.dumps(_related_body("aspirin")))
         return httpx.Response(200, content=json.dumps(body))
 
     client = RxNormClient(
@@ -203,7 +309,9 @@ async def test_normalize_caches_the_result_and_does_not_refetch(app) -> None:  #
     second = await client.normalize(query)
 
     assert first == second
-    assert call_count == 1
+    # First call hits drugs.json + related.json; the second must be served
+    # entirely from the cache.
+    assert call_count == 2
 
 
 @pytest.mark.asyncio
@@ -274,6 +382,42 @@ async def test_an_http_error_is_not_cached_as_a_no_match(app) -> None:  # type: 
     match = await client.normalize(query)
     assert match is not None
     assert match.rxcui == "1191"
+
+
+@pytest.mark.asyncio
+async def test_a_connection_reset_returns_none_without_raising_and_is_not_cached(app) -> None:  # type: ignore[no-untyped-def]
+    """Regression: a transport-level failure used to propagate out of
+    normalize() and crash the whole medication analysis mid-stream."""
+    query = f"reset-drug-{uuid.uuid4()}"
+    body = {
+        "drugGroup": {
+            "conceptGroup": [
+                {"tty": "IN", "conceptProperties": [{"rxcui": "6809", "name": "Metformin"}]},
+            ],
+        }
+    }
+    call_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise httpx.ReadError("connection reset by peer", request=request)
+        if request.url.path.endswith("/related.json"):
+            return httpx.Response(200, content=json.dumps(_related_body("metformin")))
+        return httpx.Response(200, content=json.dumps(body))
+
+    client = RxNormClient(
+        base_url="https://rxnav.nlm.nih.gov/REST",
+        redis=app.state.redis,
+        cache_ttl_seconds=60,
+        max_rps=20,
+        transport=_transport(handler),
+    )
+    assert await client.normalize(query) is None
+    match = await client.normalize(query)
+    assert match is not None
+    assert match.rxcui == "6809"
 
 
 @pytest.mark.asyncio

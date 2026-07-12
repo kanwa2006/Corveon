@@ -71,6 +71,16 @@ def _ocr_pdf_page(page: fitz.Page) -> str:
     it — the scanned-document fallback. Never runs on a page that already
     has a text layer (checked by the caller), so a normal text PDF pays
     zero OCR cost."""
+    # Enforce the pixel cap BEFORE rasterizing: get_pixmap allocates the
+    # full bitmap, so a small PDF declaring an extreme MediaBox would OOM
+    # the worker before the post-render check in _ocr_image ever ran.
+    rendered_pixels = page.rect.width * _OCR_ZOOM * page.rect.height * _OCR_ZOOM
+    if rendered_pixels > MAX_IMAGE_PIXELS:
+        raise DocumentTooLargeError(
+            f"PDF page is {page.rect.width:.0f}x{page.rect.height:.0f} pt "
+            f"(~{rendered_pixels:,.0f} px at OCR resolution), exceeding the "
+            f"{MAX_IMAGE_PIXELS:,}px limit."
+        )
     pixmap = page.get_pixmap(matrix=fitz.Matrix(_OCR_ZOOM, _OCR_ZOOM))
     image = Image.open(io.BytesIO(pixmap.tobytes("png")))
     return _ocr_image(image)

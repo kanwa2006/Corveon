@@ -58,7 +58,11 @@ async def get_storage(request: Request) -> ObjectStorage:
 
 
 def get_embedding_model_dep(settings: Annotated[Settings, Depends(get_settings)]) -> EmbeddingModel:
-    return get_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE)
+    return get_embedding_model(
+        settings.EMBEDDING_MODEL_ID,
+        settings.EMBEDDING_DEVICE,
+        offline_only=settings.is_ollama_only,
+    )
 
 
 async def get_provider_registry(request: Request) -> ProviderRegistry:

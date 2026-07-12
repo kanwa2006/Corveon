@@ -57,3 +57,11 @@ def test_get_embedding_model_is_a_cached_singleton() -> None:
     first = get_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE)
     second = get_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_DEVICE)
     assert first is second
+
+
+def test_offline_only_raises_instead_of_downloading_an_uncached_model() -> None:
+    """Regression (N6, ADR-0024): in ollama_only mode a model missing from
+    the local HuggingFace cache must be a hard, explanatory error — never a
+    silent outbound download that violates the air-gap guarantee."""
+    with pytest.raises(RuntimeError, match="ollama_only"):
+        get_embedding_model("corveon-test/definitely-not-a-cached-model", "cpu", offline_only=True)

@@ -124,8 +124,17 @@ def check_renal_thresholds(
 
     findings: list[RenalFinding] = []
     for index, medication in enumerate(medications):
-        threshold = _THRESHOLD_SENSITIVE_DRUGS.get(medication.name.strip().lower())
-        if threshold is None:
+        # Threshold keys are generic ingredient names — match against the
+        # medication's ingredient/parsed match names, never the display
+        # name (RxNav canonical names are often verbose branded strings).
+        matched_name: str | None = None
+        threshold: float | None = None
+        for candidate in medication.names_for_matching:
+            threshold = _THRESHOLD_SENSITIVE_DRUGS.get(candidate)
+            if threshold is not None:
+                matched_name = candidate
+                break
+        if threshold is None or matched_name is None:
             continue
 
         crcl_below = crcl < threshold
@@ -158,7 +167,7 @@ def check_renal_thresholds(
                 egfr_ml_min=round(egfr, 1),
                 threshold_ml_min=threshold,
                 severity=severity,
-                rule_id=f"renal_threshold:{medication.name.strip().lower()}",
+                rule_id=f"renal_threshold:{matched_name}",
                 explanation=explanation,
             )
         )

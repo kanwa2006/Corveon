@@ -92,6 +92,51 @@ async def test_find_interactions_is_case_insensitive_on_drug_names(
 
 
 @pytest.mark.asyncio
+async def test_find_interactions_matches_via_ingredient_match_names_not_branded_display_names(
+    app,  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+) -> None:
+    """Regression (N1): DDInter rows key on ingredient names — a medication
+    whose display name is RxNav's verbose branded canonical string must
+    still match via its ingredient match_names."""
+    path = tmp_path / "sample.csv"
+    path.write_text(_SAMPLE_CSV, encoding="utf-8")
+
+    async for session in app.state.db.session():
+        await load_ddinter_snapshot(session, path=path, version=f"test-{uuid.uuid4()}")
+        await session.commit()
+
+        medications = [
+            NormalizedMedication(
+                raw_text="Coumadin 1mg",
+                name="warfarin sodium 1 MG Oral Tablet [Coumadin]",
+                rxcui="855290",
+                dose="1mg",
+                route=None,
+                frequency=None,
+                match_names=("warfarin", "coumadin"),
+            ),
+            NormalizedMedication(
+                raw_text="aspirin 81mg",
+                name="aspirin 81 MG Oral Tablet",
+                rxcui="243670",
+                dose="81mg",
+                route=None,
+                frequency=None,
+                match_names=("aspirin",),
+            ),
+        ]
+        findings = await find_interactions(
+            medications, session=session, openfda_client=_FakeOpenFdaDdiClient()
+        )
+
+        assert len(findings) == 1
+        assert findings[0].severity == FindingSeverity.MAJOR
+        assert findings[0].source == InteractionSource.DDINTER
+        break
+
+
+@pytest.mark.asyncio
 async def test_find_interactions_falls_back_to_openfda_when_ddinter_has_no_record(
     app,  # type: ignore[no-untyped-def]
     tmp_path: Path,

@@ -24,6 +24,21 @@ class NormalizedMedication:
     dose: str | None
     route: str | None
     frequency: str | None
+    # Names the deterministic rules engines match on (RxNorm IN/MIN
+    # ingredient names first, then the user's parsed name — lowercased, see
+    # normalizer.normalize_entry). ``name`` itself is display-only: RxNav's
+    # canonical name is often a verbose branded product string that
+    # ingredient-keyed rule tables (renal thresholds, DDInter, Beers/STOPP)
+    # can never match.
+    match_names: tuple[str, ...] = ()
+
+    @property
+    def names_for_matching(self) -> tuple[str, ...]:
+        """Falls back to the display name when no match names were supplied
+        (direct construction in tests, or callers predating match_names)."""
+        if self.match_names:
+            return self.match_names
+        return (self.name.strip().lower(),)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,10 +102,22 @@ async def find_interactions(
     for i in range(len(medications)):
         for j in range(i + 1, len(medications)):
             medication_a, medication_b = medications[i], medications[j]
-            name_a = _normalize_name(medication_a.name)
-            name_b = _normalize_name(medication_b.name)
+            names_a = medication_a.names_for_matching
+            names_b = medication_b.names_for_matching
 
-            ddinter_row = await _lookup_ddinter(session, name_a, name_b)
+            # DDInter rows are keyed on ingredient names — check every
+            # (ingredient/parsed) name combination for the pair; lists are
+            # 1-2 names each, so this stays a handful of cheap DB lookups.
+            ddinter_row: DrugInteraction | None = None
+            for name_a in names_a:
+                for name_b in names_b:
+                    ddinter_row = await _lookup_ddinter(
+                        session, _normalize_name(name_a), _normalize_name(name_b)
+                    )
+                    if ddinter_row is not None:
+                        break
+                if ddinter_row is not None:
+                    break
             if ddinter_row is not None:
                 findings.append(
                     InteractionFinding(
@@ -105,7 +132,10 @@ async def find_interactions(
                 )
                 continue
 
-            fallback = await _lookup_openfda_fallback(openfda_client, name_a, name_b)
+            # openFDA label search is by generic name — use each side's
+            # best match name (first ingredient when resolved, else the
+            # parsed name), never the branded display string.
+            fallback = await _lookup_openfda_fallback(openfda_client, names_a[0], names_b[0])
             if fallback is not None:
                 findings.append(
                     InteractionFinding(

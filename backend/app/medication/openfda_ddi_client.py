@@ -71,7 +71,14 @@ class OpenFdaDdiClient:
         async def fetch() -> dict[str, object] | None | Unavailable:
             if not self._bucket.try_consume():
                 return UNAVAILABLE
-            return await self._fetch_from_api(label_drug, mentioned_drug)
+            try:
+                return await self._fetch_from_api(label_drug, mentioned_drug)
+            except (httpx.HTTPError, ValueError):
+                # Transport-level failures (connection reset, timeout) and
+                # unparseable bodies are the source being unreachable, not
+                # the source answering — same UNAVAILABLE contract as an
+                # HTTP 5xx: never cached, never raised out of search/lookup.
+                return UNAVAILABLE
 
         cached = await get_or_fetch(
             self._redis,

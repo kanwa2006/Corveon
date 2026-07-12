@@ -25,6 +25,12 @@ from app.providers.budget import TokenBucket
 class RxNormMatch:
     rxcui: str
     canonical_name: str
+    # Lowercased RxNorm IN/MIN (ingredient / multi-ingredient) concept
+    # names for the matched concept. The canonical name is often a verbose
+    # branded product string ("apixaban 5 MG Oral Tablet [Eliquis]") that
+    # the deterministic rules engines' ingredient-keyed tables can never
+    # match — rule matching must use these, never the display name.
+    ingredient_names: tuple[str, ...] = ()
 
 
 class SupportsNormalize(Protocol):
@@ -70,7 +76,14 @@ class RxNormClient:
         async def fetch() -> dict[str, object] | None | Unavailable:
             if not self._bucket.try_consume():
                 return UNAVAILABLE
-            return await self._fetch_from_api(name)
+            try:
+                return await self._fetch_from_api(name)
+            except (httpx.HTTPError, ValueError):
+                # Transport-level failures (connection reset, timeout) and
+                # unparseable bodies are the source being unreachable, not
+                # the source answering — same UNAVAILABLE contract as an
+                # HTTP 5xx: never cached, never raised out of search/lookup.
+                return UNAVAILABLE
 
         cached = await get_or_fetch(
             self._redis,
@@ -81,20 +94,43 @@ class RxNormClient:
         )
         if cached is None:
             return None
-        return RxNormMatch(rxcui=str(cached["rxcui"]), canonical_name=str(cached["canonical_name"]))
+        raw_ingredients = cached.get("ingredient_names")
+        ingredient_names = (
+            tuple(str(name) for name in raw_ingredients)
+            if isinstance(raw_ingredients, list)
+            else ()
+        )
+        return RxNormMatch(
+            rxcui=str(cached["rxcui"]),
+            canonical_name=str(cached["canonical_name"]),
+            ingredient_names=ingredient_names,
+        )
 
     async def _fetch_from_api(self, name: str) -> dict[str, object] | None | Unavailable:
         async with httpx.AsyncClient(timeout=10.0, transport=self._transport) as client:
-            exact = await self._fetch_exact(client, name)
-            if isinstance(exact, Unavailable):
+            match = await self._fetch_exact(client, name)
+            if isinstance(match, Unavailable):
                 return UNAVAILABLE
-            if exact is not None:
-                return exact
-            # getDrugs only resolves correctly-spelled names; blueprint §9
-            # requires typo tolerance via getApproximateMatch, otherwise a
-            # misspelled drug never normalizes and silently produces no
-            # DDI/renal/PIP findings downstream.
-            return await self._fetch_approximate(client, name)
+            if match is None:
+                # getDrugs only resolves correctly-spelled names; blueprint §9
+                # requires typo tolerance via getApproximateMatch, otherwise a
+                # misspelled drug never normalizes and silently produces no
+                # DDI/renal/PIP findings downstream.
+                match = await self._fetch_approximate(client, name)
+            if isinstance(match, Unavailable):
+                return UNAVAILABLE
+            if match is None:
+                return None
+
+            ingredients = await self._fetch_ingredients(client, str(match["rxcui"]))
+            if isinstance(ingredients, Unavailable):
+                # Never cache a match without its ingredient names: rule
+                # matching depends on them, so a transiently missing lookup
+                # cached now would silently disable renal/PIP/DDI matching
+                # for this drug until the TTL expires.
+                return UNAVAILABLE
+            match["ingredient_names"] = ingredients
+            return match
 
     async def _fetch_exact(
         self, client: httpx.AsyncClient, name: str
@@ -134,6 +170,31 @@ class RxNormClient:
             if canonical_name:
                 return {"rxcui": rxcui, "canonical_name": canonical_name}
         return None
+
+    async def _fetch_ingredients(
+        self, client: httpx.AsyncClient, rxcui: str
+    ) -> list[str] | Unavailable:
+        """Resolves the concept's RxNorm IN/MIN ingredient names — the
+        generic names the deterministic rules engines key on. An empty list
+        is a real answer (e.g. RxNav has no ingredient relation for the
+        concept); the caller then falls back to the user's own parsed name
+        for matching."""
+        response = await client.get(
+            f"{self._base_url}/rxcui/{rxcui}/related.json", params={"tty": "IN MIN"}
+        )
+        if response.status_code >= 400:
+            return UNAVAILABLE
+
+        data = response.json()
+        names: list[str] = []
+        for group in data.get("relatedGroup", {}).get("conceptGroup") or []:
+            if group.get("tty") not in ("IN", "MIN"):
+                continue
+            for prop in group.get("conceptProperties") or []:
+                ingredient = prop.get("name")
+                if ingredient and str(ingredient).strip():
+                    names.append(str(ingredient).strip().lower())
+        return list(dict.fromkeys(names))
 
     async def _fetch_rxcui_name(
         self, client: httpx.AsyncClient, rxcui: str
