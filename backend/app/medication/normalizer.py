@@ -109,13 +109,29 @@ def _parse_entries(raw: str) -> list[ParsedMedicationEntry] | None:
 
 async def normalize_entry(
     entry: ParsedMedicationEntry, *, rxnorm_client: SupportsNormalize
-) -> tuple[str | None, str]:
-    """Returns ``(rxcui, name)`` — ``rxcui`` is None when RxNav had no
-    match; ``name`` is RxNav's canonical name when matched, otherwise the
-    entry's own parsed name (an unmatched drug is still recorded, not
-    dropped — blueprint §9's "insufficient data" posture, not a hard
-    failure)."""
+) -> tuple[str | None, str, tuple[str, ...]]:
+    """Returns ``(rxcui, display_name, match_names)`` — ``rxcui`` is None
+    when RxNav had no match; ``display_name`` is RxNav's canonical name when
+    matched, otherwise the entry's own parsed name (an unmatched drug is
+    still recorded, not dropped — blueprint §9's "insufficient data"
+    posture, not a hard failure).
+
+    ``match_names`` is what the deterministic rules engines match on:
+    RxNorm IN/MIN ingredient names first, then the user's own parsed name —
+    all lowercased, deduplicated. The canonical display name is often a
+    verbose branded product string ("apixaban 5 MG Oral Tablet [Eliquis]")
+    that ingredient-keyed rule tables can never match, so it is
+    deliberately NOT a match name."""
+    parsed_name = entry.name.strip().lower()
     match = await rxnorm_client.normalize(entry.name)
     if match is None:
-        return None, entry.name
-    return match.rxcui, match.canonical_name
+        return None, entry.name, (parsed_name,)
+    match_names = tuple(
+        dict.fromkeys(
+            [
+                *(name.strip().lower() for name in match.ingredient_names if name.strip()),
+                parsed_name,
+            ]
+        )
+    )
+    return match.rxcui, match.canonical_name, match_names

@@ -134,10 +134,11 @@ async def test_normalize_entry_returns_rxcui_and_canonical_name_on_match() -> No
     )
     fake_client = _FakeRxNormClient(RxNormMatch(rxcui="6809", canonical_name="Metformin"))
 
-    rxcui, name = await normalize_entry(entry, rxnorm_client=fake_client)
+    rxcui, name, match_names = await normalize_entry(entry, rxnorm_client=fake_client)
 
     assert rxcui == "6809"
     assert name == "Metformin"
+    assert match_names == ("metformin",)
     assert fake_client.queries == ["metformin"]
 
 
@@ -152,7 +153,33 @@ async def test_normalize_entry_falls_back_to_parsed_name_when_unmatched() -> Non
     )
     fake_client = _FakeRxNormClient(None)
 
-    rxcui, name = await normalize_entry(entry, rxnorm_client=fake_client)
+    rxcui, name, match_names = await normalize_entry(entry, rxnorm_client=fake_client)
 
     assert rxcui is None
     assert name == "some made up drug"
+    assert match_names == ("some made up drug",)
+
+
+@pytest.mark.asyncio
+async def test_normalize_entry_match_names_use_ingredients_not_the_branded_display_name() -> None:
+    """Regression (N1): RxNav's canonical name is often a verbose branded
+    product string ("apixaban 5 MG Oral Tablet [Eliquis]") that the
+    ingredient-keyed rules engines can never match — match_names must carry
+    the IN/MIN ingredient names plus the user's parsed name, and never the
+    branded display string."""
+    entry = ParsedMedicationEntry(
+        raw_text="Eliquis 5mg BID", name="Eliquis", dose="5mg", route=None, frequency=None
+    )
+    fake_client = _FakeRxNormClient(
+        RxNormMatch(
+            rxcui="562282",
+            canonical_name="apixaban 5 MG Oral Tablet [Eliquis]",
+            ingredient_names=("apixaban",),
+        )
+    )
+
+    rxcui, name, match_names = await normalize_entry(entry, rxnorm_client=fake_client)
+
+    assert rxcui == "562282"
+    assert name == "apixaban 5 MG Oral Tablet [Eliquis]"
+    assert match_names == ("apixaban", "eliquis")

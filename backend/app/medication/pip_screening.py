@@ -104,7 +104,12 @@ async def check_pip_criteria(
         return []
 
     criteria = await _load_criteria(session)
-    normalized_meds = [_normalize_name(m.name) for m in medications]
+    # Criterion drug lists hold generic ingredient names — match against
+    # each medication's ingredient/parsed match names, never its display
+    # name (RxNav canonical names are often verbose branded strings).
+    normalized_meds = [
+        {_normalize_name(name) for name in m.names_for_matching} for m in medications
+    ]
     findings: list[PipFinding] = []
 
     for criterion in criteria:
@@ -117,8 +122,8 @@ async def check_pip_criteria(
         rule_id = f"{criterion.source.value}:{criterion.criterion_id}"
 
         if criterion.direction == PipDirection.AVOID:
-            for index, normalized_name in enumerate(normalized_meds):
-                if normalized_name in criterion.drug_names:
+            for index, med_names in enumerate(normalized_meds):
+                if any(name in criterion.drug_names for name in med_names):
                     findings.append(
                         PipFinding(
                             medication_index=index,
@@ -137,7 +142,9 @@ async def check_pip_criteria(
                         )
                     )
         else:  # PipDirection.START_CONSIDER
-            if any(name in criterion.drug_names for name in normalized_meds):
+            if any(
+                name in criterion.drug_names for med_names in normalized_meds for name in med_names
+            ):
                 continue
             findings.append(
                 PipFinding(

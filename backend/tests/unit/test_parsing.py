@@ -93,6 +93,23 @@ def test_parse_pdf_ocrs_a_scanned_page_with_no_text_layer() -> None:
     assert "SCANNED" in parsed.pages[0].upper()
 
 
+def test_parse_pdf_rejects_an_ocr_page_that_would_rasterize_past_the_pixel_cap() -> None:
+    """Regression (N2): the pixel cap must be enforced BEFORE get_pixmap
+    rasterizes the page — a small image-only PDF declaring an extreme
+    MediaBox used to allocate the full multi-GB bitmap first, OOMing the
+    ingestion worker with the guard never reached."""
+    doc = fitz.open()
+    # 14400x14400 pt is PDF's maximum page size; at 2x OCR zoom that would
+    # be ~829M pixels — far past MAX_IMAGE_PIXELS. No text layer, so the
+    # OCR path is taken.
+    doc.new_page(width=14400, height=14400)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    with pytest.raises(DocumentTooLargeError, match="OCR resolution"):
+        parse_pdf(pdf_bytes)
+
+
 # ── DOCX ─────────────────────────────────────────────────────────────────
 
 

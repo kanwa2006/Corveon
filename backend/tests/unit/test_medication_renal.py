@@ -123,6 +123,31 @@ class TestCheckRenalThresholds:
         findings = check_renal_thresholds([_medication("Apixaban")], params)
         assert len(findings) == 1
 
+    def test_threshold_matches_via_ingredient_match_names_not_the_branded_display_name(
+        self,
+    ) -> None:
+        """Regression (N1): the real normalization pipeline sets ``name`` to
+        RxNav's canonical name — often a verbose branded product string that
+        can never equal an ingredient threshold key. Matching must go
+        through ``match_names`` (ingredients + parsed name), or the renal
+        check silently never fires for real normalized input."""
+        params = RenalParameters(
+            age_years=85, weight_kg=50, sex="male", serum_creatinine_mg_dl=3.0, height_cm=170
+        )
+        branded = NormalizedMedication(
+            raw_text="Eliquis 5mg BID",
+            name="apixaban 5 MG Oral Tablet [Eliquis]",
+            rxcui="562282",
+            dose="5mg",
+            route=None,
+            frequency=None,
+            match_names=("apixaban", "eliquis"),
+        )
+        findings = check_renal_thresholds([branded], params)
+        assert len(findings) == 1
+        assert findings[0].threshold_ml_min == 30.0
+        assert findings[0].rule_id == "renal_threshold:apixaban"
+
     def test_only_threshold_sensitive_medications_in_a_mixed_list_get_findings(self) -> None:
         params = RenalParameters(
             age_years=85, weight_kg=50, sex="male", serum_creatinine_mg_dl=3.0, height_cm=170

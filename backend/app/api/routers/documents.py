@@ -27,6 +27,7 @@ router = APIRouter(tags=["documents"])
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 _PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MiB — upload-bomb/abuse defense
+_UPLOAD_CHUNK_BYTES = 1024 * 1024  # stream uploads 1 MiB at a time (see upload_document)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,11 +83,25 @@ async def upload_document(
         supported = ", ".join(sorted(_ALLOWED_FORMATS))
         raise ValidationAppError(f"Unsupported file type {extension!r}. Supported: {supported}.")
 
-    data = await file.read()
-    if len(data) > _MAX_UPLOAD_BYTES:
+    # Enforce the size cap while streaming, never after buffering the whole
+    # body: a multi-GB upload must be rejected at the first chunk past the
+    # limit, not read into memory in full first. Starlette exposes the
+    # multipart part's declared size when the client sent one — reject that
+    # early without reading anything.
+    if file.size is not None and file.size > _MAX_UPLOAD_BYTES:
         raise ValidationAppError(
             f"File exceeds the {_MAX_UPLOAD_BYTES // (1024 * 1024)} MiB upload limit."
         )
+    chunks: list[bytes] = []
+    received = 0
+    while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
+        received += len(chunk)
+        if received > _MAX_UPLOAD_BYTES:
+            raise ValidationAppError(
+                f"File exceeds the {_MAX_UPLOAD_BYTES // (1024 * 1024)} MiB upload limit."
+            )
+        chunks.append(chunk)
+    data = b"".join(chunks)
     if spec.magic_bytes is not None and not data.startswith(spec.magic_bytes):
         raise ValidationAppError("File content does not match its extension.")
     if spec.magic_bytes is None:

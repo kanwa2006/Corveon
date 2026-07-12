@@ -16,7 +16,7 @@ come from the environment only — never code, never the database.
 | `LOG_FORMAT` | `json` | `json` (prod) or `console` (local) |
 | `API_HOST` / `API_PORT` | `0.0.0.0` / `8000` | Uvicorn bind |
 | `FRONTEND_ORIGIN` | `http://localhost:3000` | CORS allow-origin |
-| `DEPLOYMENT_MODE` | `standard` | `standard \| ollama_only` — `ollama_only` is a code-enforced guarantee (ADR-0024) that AI chat + evidence retrieval never call a cloud provider or public connector, even if their keys are set |
+| `DEPLOYMENT_MODE` | `standard` | `standard \| ollama_only` — `ollama_only` is a code-enforced guarantee (ADR-0024) that AI chat + evidence retrieval never call a cloud provider or public connector, even if their keys are set. It also forbids downloading the embedding model: pre-populate the local HuggingFace cache (e.g. bake the model into the image) or startup fails with an explanatory error. In both modes a cached model loads fully offline (`local_files_only`) — no huggingface.co calls on boot |
 
 ## Security / auth
 | Var | Default | Meaning |

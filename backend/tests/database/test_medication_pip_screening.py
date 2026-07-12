@@ -92,6 +92,42 @@ async def test_check_pip_criteria_flags_an_unconditional_beers_avoid_match(
 
 
 @pytest.mark.asyncio
+async def test_check_pip_criteria_matches_via_ingredient_match_names_not_branded_display_names(
+    app,  # type: ignore[no-untyped-def]
+) -> None:
+    """Regression (N1): criterion drug lists hold ingredient names — a
+    medication whose display name is RxNav's verbose branded canonical
+    string must still match via its ingredient match_names."""
+    ingredient = f"beers-ingredient-{uuid.uuid4()}"
+    async for session in app.state.db.session():
+        await _seed_criterion(
+            session,
+            source=PipSource.BEERS_2023,
+            criterion_id="TEST-BEERS-BRANDED-1",
+            drug_names=[ingredient],
+            condition_keywords=[],
+            direction=PipDirection.AVOID,
+            severity=FindingSeverity.MAJOR,
+        )
+        await session.commit()
+
+        branded = NormalizedMedication(
+            raw_text=f"{ingredient} 25mg",
+            name=f"{ingredient} 25 MG Oral Tablet [SomeBrand]",
+            rxcui="99999",
+            dose="25mg",
+            route=None,
+            frequency=None,
+            match_names=(ingredient, "somebrand"),
+        )
+        findings = await check_pip_criteria([branded], age_years=70, conditions=[], session=session)
+
+        assert len(findings) == 1
+        assert findings[0].medication_index == 0
+        break
+
+
+@pytest.mark.asyncio
 async def test_check_pip_criteria_requires_a_matching_condition_for_stopp(
     app,  # type: ignore[no-untyped-def]
 ) -> None:

@@ -31,6 +31,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.metrics import PrometheusMiddleware, mount_metrics
 from app.core.middleware import TraceIdMiddleware
 from app.core.redis import create_redis_client
+from app.core.sentry import configure_sentry
 from app.core.storage import create_object_storage
 from app.core.tracing import configure_tracing, instrument_app
 from app.data.base import Database
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings)
     configure_tracing(settings)
+    configure_sentry(settings.SENTRY_DSN, settings.CORVEON_ENV)
 
     app.state.db = Database(settings)
     app.state.redis = create_redis_client(settings)

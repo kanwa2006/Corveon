@@ -194,7 +194,7 @@ async def _parse_normalize_and_persist(
         provider_registry=provider_registry, text=raw_text, budget=budget
     )
     for entry in entries:
-        rxcui, name = await normalize_entry(entry, rxnorm_client=rxnorm_client)
+        rxcui, name, match_names = await normalize_entry(entry, rxnorm_client=rxnorm_client)
         medication_row = await medication_repo.create_medication(
             chat_id=chat_id,
             raw_text=entry.raw_text,
@@ -211,6 +211,7 @@ async def _parse_normalize_and_persist(
             dose=entry.dose,
             route=entry.route,
             frequency=entry.frequency,
+            match_names=match_names,
         )
         yield (
             normalized,
