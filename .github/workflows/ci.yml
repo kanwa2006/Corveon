@@ -238,7 +238,7 @@ jobs:
             --headless -u 5 -r 5 --run-time 15s --exit-code-on-error 1
       - name: Upload debug logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: contract-failure-logs
           path: backend/backend.log
@@ -335,7 +335,7 @@ jobs:
         run: pnpm test:e2e
       - name: Upload debug logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-failure-logs
           path: |
