@@ -24,7 +24,7 @@ authors = [{ name = "Corveon contributors" }]
 dependencies = [
   # ── Web / API ─────────────────────────────────────────────
   "fastapi>=0.139,<0.140",
-  "uvicorn[standard]>=0.34,<0.40",
+  "uvicorn[standard]>=0.34,<0.52",
   "gunicorn>=23",
   "pydantic>=2.9,<3",
   "pydantic-settings>=2.5,<3",
