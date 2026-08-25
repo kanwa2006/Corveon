@@ -115,7 +115,7 @@ jobs:
             echo "has_app=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Next app scaffold not present yet — skipping frontend build gates."
           fi
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: steps.detect.outputs.has_app == 'true'
         with:
           version: 9
@@ -316,7 +316,7 @@ jobs:
         # something to reach ready — the ingestion pipeline itself is already
         # covered at the pytest level (test_documents_api.py).
         run: nohup arq app.workers.main.WorkerSettings > "$GITHUB_WORKSPACE/worker.log" 2>&1 &
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
       - uses: actions/setup-node@v4
