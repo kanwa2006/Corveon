@@ -32,7 +32,7 @@ dependencies = [
   "python-multipart>=0.0.12",
   "sse-starlette>=2.1",              # SSE served by backend, not Vercel (§23.3)
   # ── Data / persistence ────────────────────────────────────
-  "sqlalchemy[asyncio]>=2.0,<2.1",
+  "sqlalchemy[asyncio]>=2.0,<2.2",
   "asyncpg>=0.30",
   "alembic>=1.13,<2",
   "pgvector>=0.3",                  # Python bindings for pgvector types
